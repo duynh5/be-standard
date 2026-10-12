@@ -19,6 +19,19 @@ By the end of this lesson, you should be able to:
 - execute and document a database incident drill;
 - prove that another developer can operate the project from its documentation.
 
+### How to use this lesson
+
+Treat delivery as a chain of evidence rather than the final command after coding:
+
+```text
+source revision -> verified build -> identified artifact -> compatible migration
+                -> staged rollout -> health observation -> recovery rehearsal
+```
+
+If the chain loses identity or reproducibility at any point, a passing test cannot
+tell you exactly what reached the environment. If recovery is only a written hope,
+a successful deployment does not prove the system can be operated safely.
+
 ## 1. One immutable artifact, many environments
 
 Build source code once and promote the same artifact through environments. Runtime
@@ -31,6 +44,12 @@ artifact deployed to production.
 Useful build metadata includes source revision, build time, Go version, and artifact
 digest. Expose only non-sensitive version identity in logs or a protected diagnostic
 endpoint.
+
+For example, staging and production may supply different database URLs and pool
+limits, but both should run image digest `sha256:abc...`. If production is rebuilt
+from the same Git commit, timestamps, dependency resolution, base-image movement, or
+build settings can still produce different bytes. Promoting the tested artifact
+removes that ambiguity.
 
 ## 2. Build a small non-root container
 
@@ -77,6 +96,30 @@ The process runs as a non-root user and writes only to explicitly allowed epheme
 paths. The root filesystem can be read-only when the runtime environment supports
 it.
 
+The stages have distinct jobs:
+
+| Stage | Contains | Why it exists |
+| --- | --- | --- |
+| Build | Go toolchain, module cache, source | Compile and verify the executable |
+| Runtime | Executable and required runtime data only | Reduce size and attack surface |
+
+Running as non-root limits what a compromised process can modify inside the
+container. It is one containment layer, not a complete sandbox: the workload still
+needs least-privilege network, filesystem, secret, and cloud permissions.
+
+Inspect the final image, not just the Dockerfile. A useful verification asks:
+
+```text
+Does /api exist and start?
+Is the effective user non-root?
+Are /src, .git, .env, and the Go compiler absent?
+Can the process run with a read-only root filesystem?
+Can it write only to the explicitly mounted temporary location, if one is needed?
+```
+
+A multi-stage Dockerfile expresses the intention; inspecting and running the final
+stage proves what was actually packaged.
+
 ## 3. Configuration is a startup contract
 
 Parse environment variables once into typed configuration. Validate required values
@@ -103,6 +146,19 @@ Classify configuration:
 
 Do not silently fall back to development credentials in a production environment.
 Defaults are appropriate only when they are safe and documented.
+
+Startup should make configuration state obvious:
+
+```text
+read environment -> parse typed values -> validate combinations
+                 -> construct dependencies -> begin listening
+```
+
+If `DATABASE_URL` is missing or `SHUTDOWN_TIMEOUT` is negative, fail before opening
+the listening socket. Validation should name the field and violated rule, but never
+include the database URL if it embeds a password. Once parsing succeeds, pass the
+typed configuration through constructors instead of rereading environment variables
+throughout the application.
 
 ## 4. CI reproduces the local quality contract
 
@@ -141,6 +197,12 @@ for speed only when the cache key and trust boundary are safe.
 A failure should be reproducible locally through the same command. Treat compiler,
 vet, static-analysis, migration, and test warnings as failures.
 
+Repository-owned commands separate **what must pass** from **where it runs**. A
+developer and CI may provision dependencies differently, but both invoke the same
+format, test, migration, and build entry points. When CI fails `make
+test-integration`, the next action is a known local command rather than reverse-
+engineering hidden pipeline shell steps.
+
 ## 5. Application and schema deployment are not atomic
 
 During a rolling deployment, old and new application versions may run at the same
@@ -162,6 +224,21 @@ duration, and rollback strategy before deployment.
 
 Run migrations as one controlled deployment step with clear ownership. Do not let
 every replica race to modify the schema at startup.
+
+The compatibility window is easier to see as deployments over time:
+
+```text
+Release A: old code + old column
+Migration: old column + new nullable column
+Release B: mixed fleet; code understands both and writes both
+Backfill:  old rows gain verified new values
+Release C: all reads use new column; old writes stop
+Migration: remove old column only after Release A/B rollback is no longer needed
+```
+
+The contract step is intentionally delayed. Removing the old column immediately
+after deploying Release B would break an old instance still draining traffic and
+would make rollback to Release A unsafe.
 
 ## 6. Rollback and roll-forward protect different failures
 
@@ -185,6 +262,18 @@ Before deployment, record:
 Do not claim rollback support until it has been rehearsed with real artifacts and
 representative data.
 
+Use the failure type to choose a recovery direction:
+
+| Situation | Likely response | Reason |
+| --- | --- | --- |
+| New binary has a code defect; schema remains backward compatible | Roll back binary | Previous artifact can still interpret current data. |
+| New migration dropped or transformed data | Roll forward or restore by rehearsed plan | Old code cannot recreate lost compatibility safely. |
+| New version writes records the old version cannot parse | Usually roll forward | Binary rollback would introduce new failures on existing data. |
+| Fault is configuration only | Correct configuration and restart/roll forward | Artifact bytes may be healthy. |
+
+This decision must be made before rollout pressure. Record the exact compatibility
+assumptions and the signal that invalidates rollback.
+
 ## 7. Backups become trustworthy through restore drills
 
 A backup job reporting success proves only that bytes were written somewhere. A
@@ -204,6 +293,12 @@ schema/version checks, count and sample critical records, verify constraints, st
 the application against it when safe, and record actual RPO/RTO evidence.
 
 Never test restoration by overwriting the only production database.
+
+Suppose backups run every 15 minutes and the stated RPO is 20 minutes. Restoring a
+backup that is 12 minutes old may satisfy RPO, but taking 90 minutes to make the
+application usable fails a 30-minute RTO. Measure both from the drill. Also verify
+application meaning: a database can restore successfully while missing migrations,
+constraints, or related records required for a valid order.
 
 ## 8. Capacity is a chain of bounded resources
 
@@ -231,6 +326,17 @@ Run load tests with representative data, concurrency, warmup, request mix, and
 environment. Report latency distributions, errors, throughput, saturation, and the
 first limiting resource. A laptop result is not a production capacity promise.
 
+Capacity follows the first saturated dependency, not the strongest component. If
+each order holds a database connection for 100 ms, one connection can serve at most
+about ten such operations per second before overhead. A ten-connection pool has a
+rough theoretical ceiling near 100 operations per second, but lock contention,
+other queries, and safety headroom lower the usable rate. Adding HTTP instances
+without increasing safe database capacity may only create a longer pool wait.
+
+Use calculations like this as hypotheses, then load-test representative behavior.
+The useful result names the first bottleneck and the behavior just beyond it:
+controlled rejection, rising latency, deadline failures, or resource exhaustion.
+
 ## 9. Rehearse startup and termination failures
 
 Verify these process behaviors using the built artifact:
@@ -251,6 +357,19 @@ database edits.
 Make PostgreSQL unavailable. Expect readiness to fail within its deadline while
 liveness stays healthy. Restore PostgreSQL and confirm readiness recovers without a
 process restart.
+
+A concrete observation sequence is:
+
+```text
+t0 database reachable: live=200, ready=200
+t1 database stopped:   live=200, ready=503 within the readiness timeout
+t2 user request:       bounded dependency failure, no indefinite hang
+t3 database restored:  ready=200 after a successful fresh probe
+t4 user workflow:      create/read succeeds and durable state is consistent
+```
+
+Recovery at `t3` is not sufficient by itself. The user workflow and data check at
+`t4` prove that readiness is not reporting a false recovery.
 
 ### Graceful termination
 
@@ -314,6 +433,21 @@ Document detection delay, diagnosis evidence, actions that helped, unsafe or mis
 runbook steps, actual recovery time, data-integrity checks, and corrective actions
 with owners. Focus on system improvements, not blame.
 
+For example, a useful finding is specific and verifiable:
+
+```text
+Finding: readiness took 45 seconds to fail because its probe waited on the general
+request timeout.
+
+Action: give the readiness database probe a 2-second deadline.
+Owner: API team.
+Verification: repeat the drill and observe ready=503 within 3 seconds while
+liveness remains 200.
+```
+
+"Improve monitoring" is not yet an actionable finding because it lacks the missing
+signal, owner, and proof of completion.
+
 ## 11. Make the repository sufficient for another developer
 
 The root documentation should give a clean-clone path containing:
@@ -332,6 +466,12 @@ The root documentation should give a clean-clone path containing:
 Test these instructions from a clean checkout or equivalent isolated directory.
 Commands copied from shell history are not documentation until another person can
 execute them successfully.
+
+The reviewer should record every hidden assumption they encounter, such as an
+undocumented Go version, a manually created database, a missing environment value,
+or a migration tool that happened to be installed globally. Each observation
+becomes either an explicit prerequisite or a repository-owned setup step, then the
+clean-clone test starts again from the beginning.
 
 ## 12. Guided delivery build
 

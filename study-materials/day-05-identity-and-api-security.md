@@ -20,6 +20,24 @@ By the end of this lesson, you should be able to:
 - test missing, invalid, expired, wrong-role, and wrong-owner access;
 - write a compact threat model.
 
+### How to use this lesson
+
+Security decisions form a trust pipeline:
+
+```text
+untrusted request
+  -> cryptographically verify token and required claims
+  -> construct a small trusted principal
+  -> authorize the requested operation
+  -> scope access to the specific object
+  -> record a safe decision without leaking credentials
+```
+
+Passing one stage does not skip the next. A genuine token can belong to the wrong
+API, a genuine customer can lack an administrator role, and an authorized customer
+can still be forbidden from reading another customer's order. Read each section as
+one independent question in that pipeline.
+
 ## 1. Authentication and authorization are separate decisions
 
 **Authentication** answers: who or what is making this request, and how was that
@@ -33,6 +51,18 @@ the required role, scope, tenant, and object ownership.
 
 Hiding a button in a frontend is not authorization. Attackers can call the API
 directly.
+
+For example, consider `GET /v1/orders/O-42`:
+
+```text
+No token                    -> authentication fails (401)
+Valid token for customer A  -> authentication succeeds
+Order O-42 belongs to B     -> object authorization fails (public 404)
+Order O-42 belongs to A     -> request proceeds (200)
+```
+
+The same principal may be authorized for one object and denied for another. That is
+why "the middleware checked the token" is never a complete authorization design.
 
 ## 2. Participants and token purpose
 
@@ -50,6 +80,21 @@ For this service:
 OAuth 2.0 defines delegated authorization. OpenID Connect adds identity semantics
 and discovery around OAuth 2.0. This project consumes identity; it does not implement
 password storage, login UI, token issuance, recovery, or multifactor authentication.
+
+A simplified interaction is:
+
+```text
+user -> client -> authorization server
+                  returns tokens to the client
+
+client -- access token --> Order API (resource server)
+Order API -- verifies issuer, key, audience, and claims --> accept or reject
+```
+
+The ID token's audience is normally the client because it describes the user's
+authentication to that client. The access token is meant for a resource server.
+Their formats may look similar, but purpose and audience, not the number of dots in
+the string, determine where a token may be accepted.
 
 ## 3. What access-token validation must prove
 
@@ -69,6 +114,22 @@ For a signed JWT access token, validation is a conjunction of checks:
 Every check is necessary. Signature verification alone proves only that a holder of
 the selected key signed the bytes. Without issuer and audience validation, a token
 created for another system may be accepted here.
+
+Group the checks by the question they answer:
+
+| Check | Security question |
+| --- | --- |
+| Algorithm, key, signature | Were these exact bytes signed by an allowed trusted key? |
+| `iss` | Is this the authority configured to issue identities we trust? |
+| `aud` | Was this token issued for this API? |
+| `exp` and `nbf` | Is the token valid at the current time? |
+| `sub` | Which stable principal does it identify? |
+| Scope, role, tenant, token type | Is it suitable for the requested application boundary? |
+
+These checks must operate on verified claims. A verifier may inspect the unverified
+protected header to select a candidate key by a bounded `kid`, but it must treat the
+header as attacker-controlled until signature verification succeeds. Unverified
+payload claims must never establish identity or permission.
 
 Never choose the validation algorithm from the token header without an allowlist.
 Never skip signature validation because a token's payload looks plausible.
@@ -105,6 +166,19 @@ key. A test issuer can demonstrate rotation:
 
 Do not fetch keys separately for every request; that turns authentication into an
 unbounded network dependency and creates an easy denial-of-service path.
+
+An unknown `kid` is ambiguous: it may be a legitimate rotation or attacker-chosen
+input. A bounded refresh resolves that ambiguity safely:
+
+```text
+known kid    -> use cached key -> verify token
+unknown kid  -> one rate-limited refresh -> key now trusted? verify : reject
+issuer down  -> cached known key may still verify; unknown key remains rejected
+```
+
+Failing closed means lack of fresh key data never turns into skipped verification.
+It does not require discarding a still-valid cache on every temporary network
+failure.
 
 ## 5. Build a trusted principal
 
@@ -151,6 +225,21 @@ Authentication middleware behavior:
   generic 503 and log the internal reason. Do not misreport it as bad credentials.
 
 Do not log the Authorization header or the token.
+
+The principal is a deliberate reduction of authority-bearing input. A raw token may
+contain dozens of provider-specific claims; most application code needs only a
+stable subject and a few normalized permissions. Mapping once after validation
+prevents downstream packages from interpreting raw claim shapes inconsistently.
+
+Keep two error categories distinct for operations and clients:
+
+| Situation | Public result | Internal meaning |
+| --- | --- | --- |
+| Token absent, malformed, expired, or invalid | 401 | Caller did not present acceptable authentication |
+| Verifier cannot obtain any information required to decide safely | 503 | Authentication dependency is unavailable; no token was accepted |
+
+Both outcomes deny access, but the second is an availability failure worth alerting
+on rather than evidence that the caller supplied bad credentials.
 
 ## 6. Role authorization belongs near the action
 
@@ -205,6 +294,20 @@ LIMIT $4;
 This prevents insecure direct object references even if an attacker guesses an
 order ID. Test the SQL-backed behavior, not only a handler check.
 
+Loading by ID and checking afterward creates a dangerous intermediate state:
+
+```go
+// Risky shape: another customer's data has already been loaded.
+order, err := repository.GetByID(ctx, orderID)
+if order.CustomerID != principal.Subject {
+    return ErrNotFound
+}
+```
+
+A future log, metric label, cache, trace attribute, or early return can expose the
+object before the check. `GetByIDAndCustomer` makes ownership part of what it means
+to retrieve the row at all.
+
 ## 8. JWTs and opaque tokens have different tradeoffs
 
 A signed JWT can be validated locally, reducing per-request issuer calls. Its claims
@@ -219,6 +322,23 @@ requirements.
 
 Choose based on the identity provider and threat model. Do not infer token type by
 whether a string happens to contain dots.
+
+Compare one request under each model:
+
+```text
+JWT:
+  API reads the token -> verifies cached public key and claims locally -> decides
+
+Opaque token:
+  API reads the token -> calls or consults cached introspection -> receives active,
+  subject, audience, and scopes -> decides
+```
+
+If the issuer is temporarily unavailable, a JWT already covered by a valid cached
+key may still verify. An uncached opaque token may not be decidable and must fail
+closed. Conversely, an introspection response can report a token inactive before
+its original expiry, while a locally validated JWT needs an additional revocation
+design to learn that fact.
 
 ## 9. Browser sessions, CORS, and CSRF
 
@@ -240,6 +360,19 @@ unnecessary, have an appropriate `SameSite` policy, narrow path/domain scope, an
 bounded lifetime. Logout must define whether it clears only the browser session or
 also revokes server-side state.
 
+Keep the browser concerns separate:
+
+| Concern | Primary question |
+| --- | --- |
+| CORS | May JavaScript from this origin make/read this cross-origin request? |
+| CSRF | Can another site cause the browser to send ambient credentials for an unwanted action? |
+| XSS | Can injected script execute as this application and read or perform what the user can? |
+
+CORS configuration does not replace authentication, CSRF defenses do not repair
+XSS, and `HttpOnly` cookies prevent JavaScript reads but do not by themselves stop
+the browser from sending a cookie on a forged request. The credential model and
+threat determine which controls are required.
+
 ## 10. Prevent common API data exposures
 
 ### Over-posting and mass assignment
@@ -247,6 +380,22 @@ also revokes server-side state.
 Decode into a request DTO containing only client-writable fields. Never decode
 directly into a persistence or domain type with fields such as role, owner, price,
 status, or audit timestamps.
+
+For example, an attacker may send more fields than the UI exposes:
+
+```json
+{
+  "sku": "TEA-001",
+  "name": "Green tea",
+  "price_cents": 1,
+  "created_by": "admin-user",
+  "is_featured": true
+}
+```
+
+If the request DTO contains only `sku` and `name` and unknown fields are rejected,
+the caller cannot bind privileged persistence fields accidentally. The application
+obtains price, ownership, and audit identity from their authoritative sources.
 
 ### Injection
 
@@ -273,12 +422,29 @@ Load secrets from the deployment environment or secret manager, not source contr
 The API database role should have only the required schema and statement privileges.
 Migration credentials can be separate because schema modification is more powerful.
 
+A concrete separation is:
+
+```text
+api_runtime role: SELECT, INSERT, UPDATE on application tables
+migrator role:    CREATE, ALTER, DROP during the controlled migration step
+```
+
+If the running API is compromised, its database identity still cannot drop a table
+or grant itself privileges. Keeping migrator credentials out of the application
+runtime narrows the damage available through that process.
+
 ### Abuse controls
 
 Set body, header, timeout, page-size, and concurrency limits. Rate limits should be
 bounded by a meaningful key such as trusted client or principal, consider proxy
 address trust, and return a clear 429 response. A rate limiter complements rather
 than replaces authorization.
+
+For example, limit product search separately from order placement. A burst of 100
+cheap cached reads may be acceptable while 100 concurrent order transactions could
+exhaust the database pool. A customer who remains under the rate limit still cannot
+place an order for another customer; capacity policy and authorization answer
+different questions.
 
 ## 11. Security test matrix
 

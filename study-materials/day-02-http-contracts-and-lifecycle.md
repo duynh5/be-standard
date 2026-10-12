@@ -23,6 +23,21 @@ By the end of this lesson, you should be able to:
 Budget about three focused hours. Build only the endpoints listed here. PostgreSQL,
 authentication, and telemetry arrive on later days.
 
+### How to use this lesson
+
+Treat an HTTP endpoint as a public conversation, not merely a Go function. For each
+endpoint, work through the same sequence:
+
+```text
+bytes arrive -> HTTP is parsed -> input is bounded and decoded
+             -> application behavior runs -> outcome is translated
+             -> status, headers, and body are written
+```
+
+At every arrow ask two questions: "what can the caller control?" and "what resource
+must be bounded?" This keeps protocol validation, business decisions, and server
+resource management from collapsing into one large handler.
+
 ## 1. Follow one request through the system
 
 When a client requests `https://api.example.test/v1/products`, the main stages are:
@@ -40,6 +55,26 @@ When a client requests `https://api.example.test/v1/products`, the main stages a
 Each stage has bounded resources: DNS time, connection slots, file descriptors,
 memory for headers and bodies, handler goroutines, and downstream calls. Backend
 reliability begins by placing limits on those resources.
+
+For one `POST /v1/products` request, the application-visible part looks like this:
+
+```text
+ServeMux selects POST /v1/products
+  -> request-ID middleware establishes correlation
+    -> access logger starts its timer
+      -> panic recovery protects the request boundary
+        -> handler checks Content-Type and JSON shape
+          -> product operation checks duplicate SKU
+        <- handler writes 201 or translates the known error
+      <- recovery writes 500 only if a panic escaped
+    <- access logger records the final status and duration
+  <- request ID is returned to the caller
+```
+
+The network stages explain how bytes reach the process. The application stages
+explain which layer owns each decision. Keeping both views prevents a common blind
+spot: a correct handler can still sit behind an unbounded or incorrectly configured
+server.
 
 HTTP keep-alive lets several requests reuse one connection. Reuse avoids repeated
 TCP and TLS setup, but an application must close response bodies when acting as an
@@ -75,6 +110,17 @@ codes or timestamps.
 
 `POST /v1/orders` is not naturally idempotent: repeating it could create two
 orders. Day 6 of the implementation roadmap later adds an idempotency-key contract.
+
+Imagine a client sends a request and loses the response:
+
+| Operation | What the client can safely infer before retry protection |
+| --- | --- |
+| `GET /v1/products` | Repeating the read does not request another business effect. |
+| `DELETE /v1/products/123` | Repeating still asks for the same final state: absent. |
+| `POST /v1/orders` | The first request may have committed, so a retry may create another order. |
+
+Idempotence matters most when the result is ambiguous. It describes the intended
+effect, not whether every attempt returns byte-for-byte identical output.
 
 Caching is separate from safety and idempotency. A response is cacheable only when
 the method, status, headers, and authorization context allow it. Do not add caching
@@ -114,6 +160,22 @@ Location: /v1/products/product-123
 Never return Go error text, stack traces, SQL, filesystem paths, or secrets in a
 public response.
 
+Work through the outcome before choosing a status. For `POST /v1/products`:
+
+```text
+JSON cannot be decoded             -> 400 invalid_request
+Content-Type is text/plain         -> 415 unsupported_media_type
+body crosses the configured limit  -> 413 request_too_large
+SKU already exists                 -> 409 duplicate_sku
+product is created                 -> 201 + Location + representation
+unexpected database failure        -> 500 generic public problem
+```
+
+The status describes the HTTP-level outcome; the stable problem code describes the
+application condition. Two different 400 responses can therefore have distinct
+codes such as `invalid_json` and `invalid_product` without exposing internal error
+text.
+
 ## 4. Start a bounded Go HTTP server
 
 `http.ListenAndServe` with a zero-value server omits important production limits.
@@ -134,6 +196,20 @@ server := &http.Server{
 These are starting values, not universal truths. Measure real payload and latency
 needs later. The important property is that header parsing, request reads, response
 writes, idle connections, and header memory are not silently unbounded.
+
+The timeouts defend different stages:
+
+| Setting | Bounds |
+| --- | --- |
+| `ReadHeaderTimeout` | Time spent receiving request headers, before the handler can make a decision |
+| `ReadTimeout` | Time spent reading the request, including its body |
+| `WriteTimeout` | Time available to produce and send the response |
+| `IdleTimeout` | How long an unused keep-alive connection remains open |
+| `MaxHeaderBytes` | Memory accepted for request headers |
+
+A timeout is not a throughput target. It is the point at which the server stops
+spending a resource on work that has exceeded its allowed lifetime. Choose it from
+measured behavior and the surrounding proxy/deployment deadlines.
 
 Go 1.22 and later supports method-aware patterns on `http.ServeMux`:
 
@@ -209,6 +285,21 @@ The body limit protects memory and time. Unknown-field rejection catches misspel
 client fields instead of silently ignoring them. The second decode rejects
 `{"sku":"A"}{"sku":"B"}` and other trailing JSON.
 
+Each check blocks a different failure; none is redundant:
+
+```text
+Content-Type -> Can both parties agree how to interpret the bytes?
+Byte limit   -> Can the caller force excessive memory or read time?
+Decode       -> Is the body valid JSON of the expected shape?
+Unknown keys -> Did the caller misspell or use an unsupported field?
+Second decode-> Is there exactly one top-level JSON value?
+Field rules  -> Are required strings, lengths, and formats acceptable?
+```
+
+Do not read an unlimited body into a byte slice and check its length afterward. By
+then the allocation and network read have already happened. `MaxBytesReader` places
+the boundary around the read itself.
+
 In a complete handler, classify `*http.MaxBytesError` as 413 and other malformed
 input as 400. Return a stable public problem; log diagnostic detail privately.
 
@@ -231,6 +322,12 @@ Business validation asks whether an action is allowed in the current domain stat
 The handler owns transport concerns and maps outcomes to HTTP. The product use case
 or store owns today's duplicate-SKU invariant. Do not put HTTP status codes in the
 product package.
+
+The same value can pass transport validation and still fail a business rule. For
+example, `{"sku":"TEA-001","name":"Green tea"}` may be perfectly formed JSON with
+valid field lengths, yet creation must fail if that SKU already exists. Conversely,
+a duplicate check should never need to know whether the input arrived through JSON,
+a command-line import, or a future message consumer.
 
 ## 7. Return consistent problem details
 
@@ -290,6 +387,22 @@ logging wraps recovery, so it observes the final 500 status written after a pani
 Think in both directions: request execution travels from the outer wrapper inward;
 response completion unwinds outward.
 
+It helps to picture middleware as nested calls rather than a flat checklist:
+
+```text
+requestID {
+  accessLog {
+    recoverPanic {
+      mux/handler
+    }
+  }
+}
+```
+
+Code before `next.ServeHTTP` runs on the way in. Code after it runs on the way out.
+An access logger therefore needs a response-writer wrapper that records the status
+and byte count actually written by downstream code.
+
 A useful initial order is:
 
 1. Request ID creation or validation.
@@ -337,6 +450,21 @@ if err := server.Shutdown(shutdownCtx); err != nil {
     return fmt.Errorf("shutdown HTTP server: %w", err)
 }
 ```
+
+Suppose one request is already running when `SIGTERM` arrives:
+
+```text
+t0  SIGTERM received; instance begins leaving readiness
+t1  Server.Shutdown stops accepting new connections
+t2  existing handler continues using its request context
+t3  handler returns; response is flushed
+t4  owned database/client resources close; process exits
+```
+
+If the handler is still running at the shutdown deadline, `Shutdown` returns an
+error and the process needs an explicit policy for forced termination. The deadline
+must fit inside the deployment platform's termination window, leaving time for
+cleanup after draining.
 
 Request contexts are canceled when clients disconnect, requests are canceled by
 HTTP/2, or the server stops the connection. Pass `r.Context()` into blocking use
@@ -415,6 +543,21 @@ For in-memory products ordered by `(sku, id)`, encode the last pair as an opaque
 URL-safe value. On the next request, return records strictly after that pair. Validate
 decoded cursor shape and enforce a maximum page size. Do not expose a database
 offset disguised as base64.
+
+For example, with page size two:
+
+```text
+ordered products: (COF-001, p2), (TEA-001, p1), (TEA-001, p9), (WAT-001, p4)
+
+page 1: (COF-001, p2), (TEA-001, p1)
+cursor: opaque encoding of (TEA-001, p1)
+page 2: values strictly greater than (TEA-001, p1)
+        -> (TEA-001, p9), (WAT-001, p4)
+```
+
+Including `id` resolves the tie between the two `TEA-001` positions. If the cursor
+contained only the SKU, the server could not say whether `p9` belongs before or
+after the page boundary.
 
 ## 13. Knowledge check
 

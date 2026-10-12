@@ -25,6 +25,24 @@ Budget about three focused hours. Type the examples instead of copying them when
 possible. The small mistakes you make while typing are useful practice with the
 compiler and test output.
 
+### How to use this lesson
+
+Do not try to memorize every Go feature before writing code. Use one small product
+store to answer four recurring backend questions:
+
+1. **Who owns this data?** A value, slice, or map may be copied or may still share
+   storage with its caller.
+2. **Who may change it?** Exported fields, pointers, and methods determine where
+   mutation is possible.
+3. **How does failure travel?** Errors retain identity as they gain context on the
+   way back to the caller.
+4. **What happens when two operations overlap?** Synchronization must protect the
+   whole business rule, not just keep individual reads and writes race-free.
+
+Read a section, predict what its example will do, and then run or test that
+prediction. The lesson builds vocabulary first and then combines it in the guided
+store exercise.
+
 ## 1. Modules, packages, files, and names
 
 A **module** is the versioned unit of Go source code. Its root contains `go.mod`,
@@ -58,18 +76,102 @@ Every Go file begins with a package declaration:
 package product
 ```
 
-Names beginning with an uppercase letter are exported from their package. Names
-beginning with a lowercase letter are package-private.
+Go controls visibility at the **package** boundary. An identifier whose first
+letter is uppercase is exported; code in another package may refer to it. An
+identifier whose first letter is lowercase is unexported; only code in the same
+package may refer to it.
+
+This rule applies to types, functions, methods, variables, constants, and struct
+fields. "Unexported" does not mean "visible only in this file." All files declaring
+`package product` are compiled together and can use the same unexported names.
+
+Suppose `internal/product/product.go` contains:
 
 ```go
-type Product struct { // Product is exported.
-    SKU  string       // SKU is exported.
-    name string       // name is visible only inside package product.
+package product
+
+import "strings"
+
+type Product struct { // Exported type: another package can write product.Product.
+    SKU  string       // Exported field: another package can read and set it.
+    name string       // Unexported field: only package product can refer to it.
+}
+
+func New(sku, name string) Product { // Exported function.
+    return Product{SKU: sku, name: name}
+}
+
+func (p Product) Name() string { // Exported method.
+    return p.name
+}
+
+func normalizeSKU(sku string) string { // Unexported helper.
+    return strings.ToUpper(strings.TrimSpace(sku))
 }
 ```
 
-Export only what a caller needs. A smaller package surface leaves fewer behaviors
-that must remain compatible.
+Another file in the same directory, such as `internal/product/store.go`, also says
+`package product`. It can use every name above, including the lowercase ones:
+
+```go
+package product
+
+func displayName(p Product) string {
+    return p.name + " (" + normalizeSKU(p.SKU) + ")" // Both are accessible here.
+}
+```
+
+By contrast, `cmd/api/main.go` belongs to package `main` and imports the product
+package:
+
+```go
+package main
+
+import (
+    "fmt"
+
+    "be-standard/internal/product"
+)
+
+func main() {
+    tea := product.New("tea-001", "Green tea")
+
+    fmt.Println(tea.SKU)    // Allowed: SKU is exported.
+    fmt.Println(tea.Name()) // Allowed: Name is exported.
+
+    // fmt.Println(tea.name)          // Does not compile: name is unexported.
+    // product.normalizeSKU(tea.SKU)  // Does not compile: normalizeSKU is unexported.
+}
+```
+
+The importing package uses the imported package name as a qualifier:
+`product.Product`, `product.New`, and `tea.Name`. It cannot reach through that
+qualifier to lowercase identifiers.
+
+Exporting a struct type does not automatically export its fields. Code outside the
+package could construct `Product{SKU: "TEA-001"}`, but it could not set `name` in
+that literal. Providing `product.New` lets the owning package initialize and later
+validate the private field while exposing `Name()` for read access. This is one way
+to keep an invariant behind a package API.
+
+Package visibility and the `internal/` directory solve different problems:
+
+- capitalization controls which names an importing package may use;
+- the `internal/` rule controls which code is allowed to import the package at all.
+
+Tests also make this distinction visible. A test declaring `package product` can
+inspect unexported details; a test declaring `package product_test` behaves like an
+outside consumer and sees only exported names. Prefer the latter when testing the
+public package contract, and use the former only when a focused internal test needs
+private access.
+
+Export only what a caller needs. Every exported name becomes part of the package API
+that callers can depend on and that future changes may need to preserve.
+
+The remaining store exercise uses an exported `Name` field to keep its data model
+simple. That is not a contradiction: export a field when callers are deliberately
+allowed to read and construct it directly; keep it unexported when the package must
+control access or preserve rules around it.
 
 ## 2. Zero values, structs, and methods
 
@@ -117,6 +219,29 @@ The receiver appears between `func` and the method name. A value receiver receiv
 a copy of the value. A pointer receiver receives an address through which the
 method can modify the original value.
 
+For example, suppose `p.Name` is initially `"Green tea"`:
+
+```go
+func (p Product) RenameCopy(name string) {
+    p.Name = name
+}
+
+func (p *Product) RenameOriginal(name string) {
+    p.Name = name
+}
+
+p.RenameCopy("Black tea")
+// p.Name is still "Green tea": RenameCopy changed only its local copy.
+
+p.RenameOriginal("Black tea")
+// p.Name is now "Black tea": RenameOriginal followed a pointer to p.
+```
+
+This distinction is about meaning before performance. A value receiver says the
+method can work from a copy. A pointer receiver says it operates on the particular
+instance supplied by the caller. Go may take the address automatically for a
+convenient method call, but it does not change those semantics.
+
 ## 3. Values, pointers, slices, and maps
 
 ### Choose values by default for small data
@@ -152,6 +277,19 @@ func (p *Product) Rename(name string) {
 Do not use pointers automatically merely because the code is in a backend. Values
 often make ownership and mutation much clearer.
 
+One useful way to decide is to describe the contract in a sentence:
+
+| Contract | Natural representation |
+| --- | --- |
+| "Produce a renamed product and leave the input alone" | Take and return values |
+| "Rename this existing product" | Take a pointer |
+| "Look up a product; absence is an error" | Return `(Product, error)` |
+| "Look up an optional product; nil means absent" | Possibly return `*Product`, if that meaning is documented |
+
+Avoid using `*Product` merely to avoid copying three strings. That choice makes
+aliasing and `nil` part of the API, which is a larger semantic cost than this small
+copy.
+
 ### A slice is a view over an array
 
 A slice contains metadata pointing to an underlying array. Assigning or passing a
@@ -170,6 +308,25 @@ Make an independent copy at an ownership boundary:
 ```go
 independent := append([]string(nil), names...)
 ```
+
+Length and capacity explain a common surprise. Appending may reuse the same
+underlying array when capacity remains, or allocate a new one when it does not:
+
+```go
+base := make([]string, 1, 2)
+base[0] = "tea"
+alias := base
+
+alias = append(alias, "coffee") // Reuses the array because capacity is 2.
+// base still has length 1, but both slice headers refer to the same array.
+
+copyOfBase := append([]string(nil), base...)
+copyOfBase[0] = "water"
+// base[0] remains "tea" because the elements were copied.
+```
+
+At a package boundary, decide whether the caller is allowed to share your backing
+storage. If not, copy deliberately instead of relying on current capacity.
 
 ### A map is shared mutable state
 
@@ -210,6 +367,22 @@ depend on unrelated methods.
 
 Do not introduce an interface just because one implementation exists. Introduce
 one where a caller needs substitution, isolation in a test, or a real boundary.
+
+Follow the dependency direction in the example:
+
+```text
+PrintProduct needs Get
+        |
+        +-- declares ProductReader
+                         ^
+                         |
+              *Store happens to satisfy it
+```
+
+`Store` does not need to know that `PrintProduct` exists. A test can provide a tiny
+fake with only `Get`, and a future PostgreSQL adapter can satisfy the same consumer
+without inheriting unrelated store methods. This is why the interface normally
+lives beside the code that consumes it.
 
 You can ask the compiler to verify an implementation:
 
@@ -267,6 +440,27 @@ if errors.As(err, &validationErr) {
 Avoid comparing error text. Messages are for people and may change; identities and
 types are contracts. Handle an error once: either recover from it meaningfully or
 return it with useful context.
+
+Think of wrapping as building a chain rather than replacing the error:
+
+```text
+ErrNotFound
+  <- "get product TEA-001: product not found"
+  <- "render product page: get product TEA-001: product not found"
+```
+
+Printing the outer error gives a useful story. `errors.Is(err, ErrNotFound)` walks
+the chain and still finds the stable cause. By contrast, `%v` formats the inner
+error but does not add it to the chain:
+
+```go
+wrapped := fmt.Errorf("load product: %w", ErrNotFound) // errors.Is succeeds.
+formatted := fmt.Errorf("load product: %v", ErrNotFound) // Identity is lost.
+```
+
+At each layer, add context that layer uniquely knows. A store can name the failed
+operation and SKU; an HTTP handler later decides that `ErrNotFound` maps to a public
+404. The store should not make that HTTP decision itself.
 
 ## 6. Resource ownership and `defer`
 
@@ -326,6 +520,24 @@ defer cancel()
 
 Cancellation is cooperative. Calling `cancel` closes `ctx.Done()`, but work stops
 only if the receiving code observes the signal or calls an API that does.
+
+A deadline normally travels down the call stack while the error travels back up:
+
+```text
+HTTP request context (deadline)
+        -> use case
+            -> PostgreSQL query
+
+PostgreSQL observes cancellation
+        <- returns context deadline error
+            <- use case adds operation context
+                <- handler maps the outcome
+```
+
+Creating a fresh `context.Background()` in the middle would break that chain. The
+database query could continue after the client disconnected or the server began
+shutdown. Pass the received context unless the work is intentionally detached and
+has a separately owned lifetime.
 
 The in-memory store does not perform blocking I/O, so its first version does not
 need context parameters. PostgreSQL and HTTP operations added later will.
@@ -389,6 +601,20 @@ s.products[product.SKU] = product
 If the check and insertion used separate lock sections, two goroutines could both
 observe that the SKU is absent before either inserts it.
 
+Write the unsafe interleaving out explicitly:
+
+```text
+Goroutine A: check SKU -> absent
+Goroutine B: check SKU -> absent
+Goroutine A: insert SKU -> success
+Goroutine B: insert SKU -> success or overwrite
+```
+
+The bug is not that the map operation itself takes too long. The check and insert
+together form one decision. Holding the write lock across both steps makes every
+other goroutine observe either the state before that decision or the state after it,
+never the half-finished point between them.
+
 ### Atomics and happens-before
 
 An atomic operation safely reads or writes one supported value without a data race.
@@ -419,6 +645,17 @@ Each call may be individually race-free, but two callers can both observe quanti
 `1`, then both decrement. The business operation requires one atomic check-and-
 decrement operation. Synchronize the whole invariant, not merely individual field
 accesses. Day 3 applies the same principle with database transactions and locks.
+
+Compare the two guarantees:
+
+| Guarantee | Question answered |
+| --- | --- |
+| Data-race freedom | Are conflicting memory accesses synchronized? |
+| Business atomicity | Can another operation observe or change state between the steps of this rule? |
+
+The race detector helps with the first question. A contention test with a precise
+expected outcome helps with the second. Production code normally needs both forms
+of evidence.
 
 ## 9. Guided exercise: in-memory product store
 

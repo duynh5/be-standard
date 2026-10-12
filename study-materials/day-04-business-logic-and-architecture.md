@@ -19,6 +19,20 @@ By the end of this lesson, you should be able to:
 - test rules separately from database transaction behavior;
 - explain why a modular monolith is the appropriate current deployment shape.
 
+### How to use this lesson
+
+Architecture becomes easier when you stop asking "how many layers should this
+project have?" and ask three more concrete questions:
+
+1. Which code interprets an external representation?
+2. Which code decides whether the business action is valid?
+3. Which code performs the durable side effect?
+
+For order placement, the answers are the HTTP handler, order use case, and
+PostgreSQL adapter. Follow one request through those three roles while reading this
+lesson. A boundary earns its place when it protects a different responsibility or
+testable risk, not when it makes a folder diagram look symmetrical.
+
 ## 1. Architecture manages reasons to change
 
 Architecture is not a target number of folders. It keeps volatile concerns from
@@ -35,6 +49,19 @@ different owner, vocabulary, invariant, or dependency direction.
 The service remains one deployable and one database. Clear modules reduce cognitive
 coupling now and create evidence about possible future boundaries. They do not imply
 that a network boundary should be added.
+
+Imagine three likely changes:
+
+| Change | Code that should primarily move |
+| --- | --- |
+| Rename JSON field `product_id` | HTTP transport types and contract tests |
+| Reject duplicate products in an order | Order application/domain validation |
+| Change the inventory reservation query | PostgreSQL adapter and integration tests |
+
+If any one change requires editing all three concerns everywhere, the architecture
+is spreading reasons to change. If every small feature requires several empty
+wrappers with no protected responsibility, it is over-structured. The goal is
+local, explainable change.
 
 ## 2. One concept can need several representations
 
@@ -94,6 +121,22 @@ driver errors, and column naming remain in the adapter.
 
 Separate representations are useful when they protect a boundary. Do not duplicate
 types mechanically when they are genuinely identical and owned by the same module.
+
+Follow a field through the boundary to see why conversion is useful:
+
+```text
+JSON "product_id"
+  -> placeOrderItemRequest.ProductID   (untrusted transport string)
+  -> OrderItemInput.ProductID          (validated application input)
+  -> SQL parameter $1                  (adapter representation)
+  -> order_items.product_id            (durable relational fact)
+```
+
+The values may look identical today, but each stage has a different owner. The
+handler must not let the caller set `CustomerID`; it obtains that value from the
+trusted principal when constructing the command. The adapter must not leak driver
+null types back into the domain. Conversions make those trust and ownership changes
+visible.
 
 ## 3. Organize vertical feature packages
 
@@ -158,6 +201,21 @@ For `PlaceOrder`, start with rules rather than steps:
 Rules involving only input can be checked before opening a transaction. Rules
 involving current database state must be protected inside the transaction.
 
+Classify the rules before writing the control flow:
+
+| Rule | Earliest useful check | Final authority |
+| --- | --- | --- |
+| At least one item | Application validation | Application validation |
+| Quantity is positive | Application validation | Database `CHECK` as defense in depth |
+| Product exists | Inside the transaction | Foreign key or protected query/update |
+| Inventory is sufficient | Inside the transaction | Conditional update or lock |
+| Total does not overflow | Application/adapter calculation | Checked calculation before commit |
+| Order and reservation are all-or-nothing | Transaction design | Database commit/rollback |
+
+Checking inexpensive input rules before acquiring a database connection avoids
+wasting a scarce resource. Rechecking critical durable rules in PostgreSQL protects
+against races and other writers.
+
 Represent order status with a defined type:
 
 ```go
@@ -203,6 +261,25 @@ method. A broad interface increases test setup and couples unrelated use cases.
 Different use cases may depend on different small interfaces implemented by the
 same concrete adapter.
 
+A narrow interface also keeps a unit-test fake honest:
+
+```go
+type placementFake struct {
+    got    PlacementRequest
+    result Order
+    err    error
+}
+
+func (f *placementFake) Place(_ context.Context, request PlacementRequest) (Order, error) {
+    f.got = request
+    return f.result, f.err
+}
+```
+
+This fake can prove that validation prevents a call and that valid input is
+translated correctly. It intentionally cannot prove transaction behavior; the
+PostgreSQL integration test owns that risk.
+
 ## 6. Dependency injection is ordinary construction
 
 The service receives required dependencies through a constructor:
@@ -234,6 +311,17 @@ func NewService(repository PlacementRepository, ids IDGenerator, clock Clock) *S
 Constructor parameters make requirements visible and enable deterministic tests.
 No dependency-injection framework or service locator is needed. `main` creates the
 real PostgreSQL adapter, system clock, ID generator, service, and handler.
+
+The construction direction and runtime call direction are related but distinct:
+
+```text
+startup: main -> constructs repository -> service -> handler
+runtime: handler -> calls service -> calls repository
+```
+
+`main` knows the concrete types because wiring is its job. The service knows only
+the capabilities in its fields. Tests replace those capabilities directly without
+a global registry or hidden environment lookup.
 
 For internal programmer errors such as a missing mandatory dependency, failing
 immediately during construction is clearer than allowing a nil dereference on the
@@ -276,6 +364,24 @@ The adapter's `Place` implementation:
 
 If any step fails, the deferred rollback keeps the durable invariant intact.
 
+For a two-item order, walk through a concrete success and failure:
+
+```text
+Input: 2 x TEA-001 and 1 x CUP-004
+
+1. Validate IDs and positive quantities before opening the transaction.
+2. Sort IDs as CUP-004, TEA-001 so every request locks in the same order.
+3. Reserve CUP-004 and capture its current unit price.
+4. Reserve TEA-001 and capture its current unit price.
+5. Calculate the total with overflow checks.
+6. Insert the order and both captured-price items.
+7. Commit once.
+```
+
+If step 4 reports insufficient tea, the transaction rolls back the cup reservation
+from step 3. The use case returns a stable inventory error; it does not attempt a
+second, compensating update because no part of the local transaction committed.
+
 An alternative callback-based transaction abstraction can be valid, but it often
 leaks transaction plumbing into the application and adds indirect control flow.
 Use the smallest design that preserves the operation's atomicity and remains easy
@@ -309,6 +415,22 @@ identities to HTTP problems:
 Choose one missing-product contract and test it. Never inspect error strings or let
 the domain import HTTP constants.
 
+Trace one failure through the layers:
+
+```text
+PostgreSQL conditional update returns no row
+  -> adapter determines inventory is insufficient
+  -> adapter returns ErrInsufficientInventory
+  -> service wraps it as "place order: insufficient inventory"
+  -> errors.Is still recognizes ErrInsufficientInventory
+  -> handler writes 409 with code "insufficient_inventory"
+```
+
+The internal wrapped message helps an operator understand the failed operation. The
+sentinel identity lets code make a stable decision. The public problem gives the
+client only the information it needs. One error therefore has related but distinct
+representations at each boundary.
+
 ## 9. Object ownership belongs in the query
 
 Although identity middleware is added on Day 5, design the read boundary now:
@@ -324,6 +446,17 @@ Filtering by both order and customer prevents the service from loading another
 customer's order and relying on a later check that may be forgotten. Return the same
 not-found outcome for a nonexistent order and an order owned by someone else unless
 the public contract has a compelling, safe reason to reveal existence.
+
+Suppose order `O-42` belongs to customer `C-2`:
+
+```text
+query arguments (O-42, C-2) -> one row
+query arguments (O-42, C-9) -> no rows
+query arguments (O-99, C-9) -> no rows
+```
+
+The final two cases are intentionally indistinguishable to `C-9`. The repository
+does not first return `C-2`'s row and ask another layer to remember to conceal it.
 
 ## 10. Test at the boundary that owns the risk
 
@@ -358,6 +491,17 @@ Use real PostgreSQL to prove:
 Prove that decoding and error mapping are correct without retesting transaction
 internals. Each test should fail for one clear reason.
 
+The test layers form complementary evidence:
+
+| Test boundary | Fast question it answers | What it deliberately does not prove |
+| --- | --- | --- |
+| Use-case unit test | Are input rules and dependency calls correct? | SQL, locks, or rollback |
+| PostgreSQL integration test | Do constraints and the transaction preserve durable state? | HTTP decoding and status mapping |
+| Handler test | Does the public request/response contract map correctly? | Real database concurrency |
+
+Duplicating the full workflow in every layer makes tests slower without improving
+diagnosis. Put each assertion at the narrowest boundary that owns the risk.
+
 ## 11. Guided refactor and build
 
 Complete these changes sequentially:
@@ -388,6 +532,12 @@ Write `docs/adr/0001-order-inventory-locking.md` with:
 An ADR records why a decision was made and when it should be reconsidered. It is not
 a victory announcement or a copy of implementation details.
 
+For example, the decision might state: use a conditional `UPDATE ... WHERE
+inventory_quantity >= $1` because the operation is a decrement with one clear
+invariant; reconsider if reservations gain expiration, partial fulfillment, or a
+separate inventory owner. That explanation preserves both the current reason and
+the conditions under which the decision may stop fitting.
+
 ## 13. Microservice counterfactual
 
 If order and inventory were separate services, the current transaction could no
@@ -398,6 +548,21 @@ delivery guarantees, and cross-service observability.
 No present evidence justifies paying that cost. Record the boundary and its
 consequences, but keep the modules in-process while a local transaction is the
 simplest correct consistency mechanism.
+
+The difficult case is an ambiguous partial failure:
+
+```text
+Ordering -> Inventory: reserve one TEA-001
+Inventory commits the reservation
+Inventory -> Ordering response is lost
+Ordering cannot tell whether the reservation happened
+```
+
+Inside one PostgreSQL transaction, commit or rollback gives one answer. Across two
+services, ordering needs a stable reservation ID and a way to retry or query that
+exact operation without reserving twice. If its own order update later fails, it
+also needs a durable release or reconciliation path. This is the concrete cost
+hidden behind the phrase "split inventory into a service."
 
 ## 14. Knowledge check
 

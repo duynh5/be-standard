@@ -18,6 +18,23 @@ By the end of this lesson, you should be able to:
 - diagnose validation, application, and database failures from telemetry;
 - connect an actionable alert to a runbook.
 
+### How to use this lesson
+
+This lesson is about evidence. For every claim about the service, name how you would
+prove or observe it:
+
+```text
+"invalid quantities are rejected"      -> unit test
+"rollback restores inventory"          -> PostgreSQL integration test
+"clients receive a stable problem"     -> handler test
+"users are seeing slow orders"         -> SLI metric and trace samples
+"an operator can recover the service"  -> failure drill and runbook
+```
+
+Tests provide evidence before release; telemetry and operational exercises provide
+evidence while the system runs and fails. Neither category substitutes for the
+other.
+
 ## 1. Tests answer different questions
 
 No single test style proves the whole service.
@@ -35,6 +52,13 @@ and authentication behavior need handler or acceptance tests.
 
 Avoid an oversized end-to-end suite for every branch. Slow, broad tests are harder
 to diagnose and make feedback less reliable.
+
+Choose the boundary by asking where the risky behavior actually exists. For
+example, a fake repository can prove that `PlaceOrder` does not call persistence
+for invalid input. It cannot prove that PostgreSQL rolls back a prior inventory
+update. An acceptance test can prove the public workflow works, but when it fails it
+may not reveal whether decoding, business logic, SQL, or process setup broke. Use a
+small number of broad confidence tests over a larger base of focused tests.
 
 ## 2. Table-driven tests make cases visible
 
@@ -95,6 +119,25 @@ validating another invented database rather than the real boundary.
 Use a test double only for an interface the production consumer genuinely needs.
 Do not change production APIs solely to satisfy a mocking framework.
 
+A test can now make one precise assertion about coordination:
+
+```go
+repository := &fakePlacementRepository{err: ErrInsufficientInventory}
+service := NewService(repository, fixedIDs, fixedClock)
+
+_, err := service.PlaceOrder(ctx, validCommand)
+
+if repository.calls != 1 {
+    t.Fatalf("repository calls = %d, want 1", repository.calls)
+}
+if !errors.Is(err, ErrInsufficientInventory) {
+    t.Fatalf("error = %v, want insufficient inventory", err)
+}
+```
+
+This test proves the service calls its dependency once and preserves the error's
+identity. It does not make claims about which SQL statement produced that error.
+
 ## 4. Control time, identity, and randomness
 
 Tests become flaky when they depend on wall-clock timing or random values. Inject
@@ -123,9 +166,29 @@ Production uses a real UTC clock and cryptographically appropriate ID generator;
 tests use known values. For timeout tests, prefer context cancellation and channels
 that signal exact state transitions over arbitrary sleeps.
 
+For example, configure the clock with
+`fixedClock{now: time.Date(2026, 10, 12, 9, 0, 0, 0, time.UTC)}` and the ID source
+to return `order-123`. The test can then compare the whole repository request
+exactly. It does not need a time tolerance such as "within the last second," and a
+failure prints stable values on every machine.
+
 Fixtures should be minimal and explicit. A test should create only the rows it
 needs, name important values, and clean up or isolate its state. Large shared fixture
 dumps obscure why a case passes.
+
+Determinism does not mean avoiding concurrency. It means controlling when important
+transitions happen. A last-unit test can use channels or barriers so both
+transactions reach the contention point before either proceeds:
+
+```text
+worker A ready --\
+                 barrier opens -> both attempt reservation -> collect outcomes
+worker B ready --/
+```
+
+This proves a specific interleaving without guessing that `time.Sleep` is long
+enough on every machine. Always give synchronization waits a test deadline so a bug
+fails instead of hanging the suite forever.
 
 ## 5. Logs, metrics, and traces answer different questions
 
@@ -171,6 +234,16 @@ Metric labels must have bounded cardinality. Never use customer ID, order ID,
 request ID, trace ID, raw path, error text, or SKU as labels. Unbounded label values
 create a new time series per value and can make monitoring expensive or unusable.
 
+For example, this bounded metric creates a small reusable set of series:
+
+```text
+http_requests_total{route="/v1/orders/{id}",method="GET",status_class="2xx"}
+```
+
+Using `route="/v1/orders/O-42"` creates a different series for every order. Adding
+`customer_id` multiplies it again. Keep those identifiers in a sampled trace or
+controlled log where they can be searched without changing the metric's dimensions.
+
 ### Traces: one request path
 
 A trace connects spans for HTTP handling, application work, and database operations.
@@ -181,6 +254,18 @@ statements with user data, or raw request bodies.
 Propagate standard trace context across boundaries. Request ID helps human support
 and logs; trace ID connects telemetry. They may be related but are not the same
 protocol.
+
+During one slow-order incident, the three signals work together:
+
+| Signal | Example question | Useful answer |
+| --- | --- | --- |
+| Metric | Is order latency elevated for many requests? | The p95 rose after 14:05 and pool wait is saturated. |
+| Trace | Where did one slow request spend its time? | 680 ms waiting to acquire a database connection. |
+| Log | What discrete outcome and context were recorded? | Request `req-123` ended with deadline exceeded during `place_order`. |
+
+An audit event answers a different question: who attempted a sensitive action and
+what security-relevant outcome occurred? Do not use noisy access logs as an
+accidental audit trail.
 
 ## 6. Instrument at stable boundaries
 
@@ -229,6 +314,17 @@ An error budget is the allowed unsuccessful fraction. Multi-window burn-rate ale
 identify when the budget is being consumed much faster than planned. Choose alert
 thresholds only after the SLO and traffic volume are defined.
 
+For a 99.9% success SLO over 30 days, the error budget is 0.1% of eligible
+requests. If the service receives 1,000,000 eligible requests in that window, about
+1,000 may miss the defined outcome before the budget is exhausted. This is not
+permission to discard those failures; it is a common unit for deciding whether
+reliability risk is increasing faster than the team can safely tolerate.
+
+The SLI definition must settle ambiguous cases. If the client disconnects, telemetry
+is missing, or an upstream gateway returns the response, decide whether and how the
+event enters the denominator. Otherwise two dashboards can claim different
+reliability from the same traffic.
+
 ## 8. Health and graceful shutdown are protocols
 
 Liveness checks only whether the process is alive. Readiness determines whether it
@@ -246,6 +342,18 @@ During shutdown:
 
 Test both success and deadline exhaustion. A request that ignores context can prevent
 clean drain, so cancellation must reach every blocking database and network call.
+
+During a database outage, the intended signals are deliberately different:
+
+```text
+GET /health/live  -> 200: the process and HTTP loop are alive
+GET /health/ready -> 503: this instance should receive no new user traffic
+POST /v1/orders   -> bounded failure while the dependency is unavailable
+```
+
+If liveness also fails, the platform may restart every instance and add connection
+pressure when PostgreSQL returns. If readiness stays healthy, traffic continues to
+reach an instance that cannot complete its critical work.
 
 ## 9. Bound concurrency and dependencies
 
@@ -267,6 +375,18 @@ Reject or shed excess work predictably rather than allowing memory and latency t
 grow without bound. A semaphore implemented with a buffered channel can limit a
 specific expensive operation; acquisition must honor request context.
 
+Without a concurrency bound, overload often becomes a feedback loop:
+
+```text
+more arrivals -> more in-flight work -> slower dependency
+              -> longer-held resources -> even more in-flight work
+```
+
+A limit turns hidden queue growth into an explicit decision. Work that cannot begin
+within its deadline receives a controlled failure, while admitted work retains a
+chance to complete. Size the limit from dependency capacity and measured latency,
+not merely from the number of goroutines the runtime can create.
+
 ## 10. Retry only when all conditions are satisfied
 
 A retry is safe only when:
@@ -286,8 +406,27 @@ A common backoff shape is exponential growth capped at a maximum plus randomized
 jitter. The exact schedule matters less than having a total time budget, a small
 attempt limit, and observable attempt outcomes.
 
+Suppose the request has 600 ms remaining. A policy might allow an initial attempt,
+then waits near 50 ms and 100 ms before at most two more attempts, stopping early if
+the remaining deadline cannot cover another useful call. It must not start a third
+attempt merely because the numeric attempt limit permits it when only 10 ms remain.
+The total deadline owns the entire sequence.
+
 Choose one layer to own a retry. If client, API, and database wrapper each retry
 three times, one request can cause 27 attempts during an outage.
+
+Before retrying, classify the previous attempt:
+
+| Outcome | Typical retry decision |
+| --- | --- |
+| Validation or authorization rejection | Never; another attempt is the same invalid request. |
+| Definite pre-execution connection failure | Possibly, within the total deadline. |
+| Timeout after sending a write | Ambiguous; retry only with an idempotency identity. |
+| Overload response with retry guidance | Possibly after bounded jitter, if the deadline permits. |
+| Insufficient inventory | Never; this is a business outcome, not transient infrastructure failure. |
+
+Count attempts, not just logical requests, in dependency telemetry. Otherwise a
+retry storm can make user traffic look stable while backend load multiplies.
 
 ## 11. Failure drills
 
@@ -331,6 +470,17 @@ Cancel the request while a database call waits. Expect the context error to reac
 the query, work to stop, and the handler not to continue expensive processing for a
 client that has gone away.
 
+For each drill, record the same evidence chain:
+
+```text
+injected failure -> public outcome -> log -> metric -> trace -> operator action
+                 -> recovery signal -> durable-state verification
+```
+
+If the team cannot connect those observations, adding more telemetry fields is not
+automatically the fix. First identify which diagnostic question is unanswered, then
+instrument the stable boundary that can answer it.
+
 ## 12. Alerts and runbooks
 
 An alert should indicate sustained user impact or imminent exhaustion and lead to a
@@ -351,6 +501,19 @@ Follow-up: incident record, contributing causes, and corrective actions.
 
 Do not include untested commands that can destroy data. Link every mitigation to
 permissions, rollback criteria, and verification.
+
+For example, "database pool saturation is above 90%" is useful context but not by
+itself a page. Pair it with sustained order latency or error-budget burn, then give
+the responder a first decision:
+
+```text
+If saturation began with the current rollout and rollback is schema-compatible,
+stop the rollout and roll back. Verify pool wait and the order SLI recover for ten
+minutes. Otherwise continue with the dependency-capacity investigation.
+```
+
+That instruction identifies when the action is safe, what to observe, and how to
+know it worked.
 
 ## 13. Guided build
 

@@ -20,6 +20,20 @@ By the end of this lesson, you should be able to:
 - use `EXPLAIN` to inspect a query plan;
 - distinguish unit tests from database integration tests.
 
+### How to use this lesson
+
+Move through this lesson from rules to storage, not from tables to application
+code:
+
+```text
+business rule -> relational constraint -> query/transaction -> failure test
+```
+
+For example, "inventory never becomes negative" first becomes an invariant, then a
+`CHECK` constraint and conditional update, and finally a two-buyer contention test.
+The database is not replacing application logic. It is the last shared authority
+when concurrent requests or another writer bypass an earlier application check.
+
 ## 1. Relational modeling begins with invariants
 
 A table is not merely a serialized Go struct. It represents durable facts and
@@ -37,6 +51,22 @@ For the learning service:
 Normalize facts that have independent identity and lifecycle. Preserve historical
 facts deliberately: an order item stores the unit price charged at order time
 instead of reading the product's current price later.
+
+Consider a product whose current price changes after an order is placed:
+
+```text
+products
+  TEA-001 | current price 700
+
+order_items
+  order O-42 | TEA-001 | quantity 2 | captured unit price 500
+```
+
+The order total remains 1,000 cents because `order_items` records the historical
+fact. Joining to the product's current price would silently rewrite commercial
+history. Relational modeling is therefore about deciding which facts belong
+together and which must remain independently durable, not merely eliminating
+duplicate fields.
 
 ## 2. Keys, constraints, and nullability
 
@@ -98,6 +128,21 @@ valid meaning.
 Application validation produces friendly errors. Database constraints remain the
 authoritative final barrier when concurrent callers pass the same earlier check.
 
+Each constraint answers a different question:
+
+| Constraint | Question it makes the database answer |
+| --- | --- |
+| Primary key | Which durable row is this? |
+| Foreign key | Does the referenced owner or parent exist? |
+| Unique | Can two rows claim the same business identity? |
+| Check | Is this value or combination of values allowed? |
+| `NOT NULL` | Is absence a valid state for this fact? |
+
+Constraints should also reflect cross-row ownership where possible. If data later
+becomes tenant-scoped, a foreign key that checks only an object ID may prove that
+the object exists without proving it belongs to the same tenant. Schema design must
+encode the actual invariant, not just create syntactically valid relationships.
+
 ## 3. Indexes are not free
 
 An index is an additional ordered data structure that helps PostgreSQL locate rows
@@ -117,6 +162,13 @@ CREATE INDEX products_created_id_idx
 Column order matters. The first index supports filtering by `customer_id` and then
 cursor pagination ordered by `created_at, id`. An index on every column is not a
 strategy; it increases write cost without guaranteeing a useful query path.
+
+Think of a composite index as a sorted directory. An index on
+`(customer_id, created_at, id)` groups one customer's entries first and orders that
+group by time and ID. A query beginning with `customer_id` can enter the relevant
+part of the directory directly. A query filtering only by `created_at` may not be
+able to use that ordering efficiently because entries are grouped by customer
+first. Query shape and index column order must be designed together.
 
 Unique constraints usually create a unique index automatically. Do not add a second
 identical index.
@@ -146,6 +198,23 @@ DROP TABLE example;
 Production rollback is not always a down migration. Dropping a column can destroy
 data. Prefer a new forward migration that restores compatibility, and use down
 migrations only when their safety is understood.
+
+Suppose products gain an optional description. A safe first migration is concrete
+and additive:
+
+```sql
+-- +goose Up
+ALTER TABLE products ADD COLUMN description text;
+
+-- +goose Down
+ALTER TABLE products DROP COLUMN description;
+```
+
+The existing application keeps working because old inserts may omit the nullable
+column. A later application version can start writing it. Making the column `NOT
+NULL` belongs in a later migration only after existing rows are backfilled and every
+supported writer supplies a value. This is the practical meaning of a migration
+being compatible with more than one application version.
 
 Required migration evidence:
 
@@ -209,6 +278,22 @@ must cover acquisition and execution by passing the same context:
 row := pool.QueryRow(ctx, query, sku)
 ```
 
+A pool does not make PostgreSQL infinitely parallel. It creates a queue in front of
+a limited resource:
+
+```text
+40 concurrent requests
+        |
+        v
+10 pool connections -> PostgreSQL
+30 requests wait for a connection or reach their deadline
+```
+
+Increasing the pool may reduce waiting in one instance while overwhelming the
+database across the fleet. Measure acquisition wait, query latency, and database
+saturation before changing the limit. A canceled waiting request should leave the
+queue promptly because the same context covers both acquisition and execution.
+
 ## 7. Parameterized SQL keeps code separate from data
 
 Never concatenate untrusted values into SQL:
@@ -243,6 +328,19 @@ The driver sends SQL structure and parameter data separately. Parameters protect
 values, not dynamic identifiers such as a column name. Implement sortable columns
 with a fixed allowlist, never client text interpolation.
 
+If `sku` contains `TEA-001' OR true --`, concatenation turns those characters into
+part of the SQL program. With `$1`, PostgreSQL receives the entire string as one
+value to compare:
+
+```text
+SQL structure: SELECT ... WHERE sku = $1
+parameter $1:  TEA-001' OR true --
+```
+
+The quote and comment marker lose their SQL meaning because they are data. A table
+or column name cannot be supplied through `$1`, so user-selected sorting must map a
+small public option such as `created` to a hard-coded SQL fragment.
+
 Translate `pgx.ErrNoRows` into a stable product-level not-found error at the adapter
 boundary. Translate the specific SKU uniqueness violation into duplicate SKU.
 Avoid turning every database error into not-found or conflict; unexpected failures
@@ -271,6 +369,22 @@ A transaction groups statements into one atomic commit. If order creation requir
 inventory reservation, order insertion, and item insertion, those steps belong in
 one transaction. Repository methods should not each start and commit independent
 transactions because partial success would become durable.
+
+Before commit, changes are tentative. After a successful commit, they become one
+durable outcome visible according to the database's isolation rules:
+
+```text
+BEGIN
+  reserve inventory       -- tentative
+  insert order            -- tentative
+  insert order items      -- tentative
+COMMIT                     -- all become durable together
+```
+
+If item insertion fails, rollback removes the preceding inventory change as though
+this transaction never committed. A transaction cannot roll back a separate email,
+HTTP request, or message already sent to another system, which is why remote calls
+do not belong inside this local atomic boundary.
 
 A safe shape is:
 
@@ -312,6 +426,18 @@ WHERE id = $3
 RETURNING price_cents;
 ```
 
+With one unit remaining, PostgreSQL serializes the conflicting row updates:
+
+```text
+Transaction A evaluates quantity >= 1, decrements 1 -> 0, and commits
+Transaction B then evaluates quantity >= 1 against the current row -> false
+Transaction B receives no row and cannot decrement below zero
+```
+
+The important property is that the condition and write are one database statement
+on the same row. An application-side `SELECT` followed later by `UPDATE` leaves a
+gap in which another transaction can make the earlier observation stale.
+
 If no row is returned, either the product does not exist or inventory is
 insufficient. Decide whether the public contract needs to distinguish those cases;
 if it does, issue a protected follow-up query within the same transaction.
@@ -321,6 +447,19 @@ sorted order. Consistent lock acquisition reduces deadlocks. It cannot eliminate
 all deadlocks, so recognize PostgreSQL's deadlock/serialization error and retry the
 entire transaction only with a strict attempt limit, backoff, and an idempotent
 operation boundary.
+
+Without a shared order, two transactions can form a cycle:
+
+```text
+Transaction A locks TEA, then waits for CUP
+Transaction B locks CUP, then waits for TEA
+```
+
+Neither can continue, so PostgreSQL detects the deadlock and aborts one. Sorting
+both requests as `CUP, TEA` means one transaction waits before holding the second
+transaction's needed lock; the cycle does not form for this code path. The retry
+still covers deadlocks caused by other access paths, and it must repeat the whole
+transaction because the aborted transaction committed none of its work.
 
 Isolation levels describe which concurrent anomalies a transaction may observe.
 Do not select `SERIALIZABLE` as a magic correctness switch. It can reject conflicting
@@ -389,6 +528,18 @@ SELECT ...;
 not casually use it on mutating statements or expensive production workloads.
 Look at actual versus estimated rows, scan type, loop counts, sort operations, and
 buffer activity. A sequential scan is not automatically bad for a small table.
+
+Read a plan from the most deeply indented operation outward. Ask:
+
+1. How many rows did this operation expect and actually process?
+2. Did it scan the whole relation or use an index condition matching the query?
+3. Did a sort or nested loop repeat far more work than expected?
+4. Were most rows discarded by a filter after being read?
+5. Does the test data resemble production volume and distribution?
+
+A plan on ten uniformly distributed rows proves little about a million-row table
+with one unusually large customer. Representative data shape is part of the
+evidence.
 
 Avoid N+1 access, where one query loads orders and one additional query runs for
 every order's items. Fetch related data in a bounded number of queries or a join,
