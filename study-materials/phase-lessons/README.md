@@ -1,13 +1,36 @@
 # Detailed Implementation Phase Lessons
 
 These guides expand Phases 0-26 of the
-[backend learning roadmap](../../BACKEND_LEARNING_ROADMAP.md). They are self-contained
-teaching material: external references are optional for deeper study. The roadmap
-remains authoritative for phase order, deliverables, and acceptance criteria.
+[backend learning roadmap](../../BACKEND_LEARNING_ROADMAP.md). They are project-based
+lessons for a learner who has completed the seven-day foundation or already
+understands its Go, HTTP, PostgreSQL, testing, and operational concepts. External
+references are optional for deeper study. The roadmap remains authoritative for
+phase order, deliverables, and acceptance criteria.
 
 Complete phases sequentially. Within each phase, study the mental model, perform the
 guided work, run the failure checks, answer the knowledge check, and collect the
 completion evidence before advancing.
+
+## How to learn from a phase
+
+Each phase changes one running system. Before writing code, restate four things in
+plain language:
+
+1. What user or operator problem exists now?
+2. Why does the previous phase's design not solve it?
+3. Which new guarantee will this phase add?
+4. Which test, measurement, or drill will prove that guarantee?
+
+Then work in one small vertical increment at a time. For example, do not implement
+an entire background-job platform before observing one durable job survive one
+worker restart. Build the smallest path, make its failure visible, and generalize
+only after the behavior is understood.
+
+The **Goal and mental model** explains the problem. **Guided work** is the build
+sequence. **Failure checks** deliberately challenge the design. **Completion
+evidence** is the proof you keep. If a phase reads like unexplained shorthand,
+return to its prerequisite daily lesson or earlier phase instead of memorizing the
+terms.
 
 ## Domain discovery
 

@@ -48,6 +48,27 @@ Compare:
 
 Choose from security, compliance, scale, restore, and operating constraints.
 
+### Start with a concrete situation
+
+A product read becomes slow, so a cache is added. Customer A updates a product, but
+the cache still holds the old value. Before writing cache code, decide whether that
+staleness is acceptable, for how long, and which operation still reads the source
+of truth.
+
+Now add tenants. Both tenant A and tenant B use product ID `P-1`. A cache key of
+`product:P-1` can return A's data to B. The safe key and every authoritative query
+must include trusted tenant identity:
+
+```text
+tenant:A:product:P-1
+tenant:B:product:P-1
+```
+
+Trace tenant identity from verified principal through SQL, jobs, events, cache keys,
+metrics, and operator tools. Deliberately omit it at each boundary and confirm the
+system fails closed. Multi-tenancy is not the presence of a `tenant_id` column; it
+is the inability of every path to cross that boundary accidentally.
+
 ### Guided work
 
 1. Measure a product-read bottleneck before adding cache.
@@ -123,6 +144,30 @@ Supply-chain controls connect source to artifact: locked dependencies, reviewed
 updates, reproducible build inputs, SBOM, provenance, signing, verification before
 deployment, vulnerability inventory, and a normal patched release path.
 
+### Start with a concrete situation
+
+Assume one notification-service credential is stolen. List what it can reach, how
+long it remains valid, and which audit signal reveals its use. If it can administer
+the database, read unrelated secrets, and call every service, the identity is too
+powerful. A workload credential should identify one workload and authorize only its
+required operations.
+
+Then follow one personal field, such as customer email, through the system:
+
+```text
+HTTP request -> order database -> event -> notification database -> provider
+```
+
+For every copy, record purpose, access, retention, export, and deletion behavior.
+Deletion becomes a workflow because one API `DELETE` cannot atomically erase caches,
+queued messages, provider state, backups, and derived data.
+
+A software bill of materials (SBOM) is the component inventory for a built artifact.
+Provenance records how that artifact was produced. A signature lets deployment
+verify the artifact's identity. Practice the full chain by choosing one test
+dependency advisory, locating affected artifacts, rebuilding, verifying, and
+releasing the patch.
+
 ### Guided work
 
 1. Update system data-flow and trust-boundary diagrams.
@@ -194,6 +239,26 @@ Infrastructure as code needs protected remote state, locking, review, plan outpu
 policy checks, drift detection, ownership tags, budgets, audit logs, and safe scoped
 teardown. Console-only changes become undocumented drift.
 
+### Start with a concrete situation
+
+Trace one incoming request and one database connection before provisioning anything:
+
+```text
+browser -> public DNS -> TLS load balancer -> private API workload
+private API workload -> private PostgreSQL endpoint
+```
+
+For every arrow, answer two independent questions: "Can packets travel this path?"
+and "Which identity is authorized to perform the operation?" A route without
+permission fails differently from permission without a route. Logging and failure
+tests must distinguish those cases.
+
+Identity and access management (IAM) is the system of principals, roles, and
+permissions controlling cloud resources. Infrastructure as code (IaC) is a reviewed,
+versioned description of those resources. Begin with an isolated non-production
+environment and one narrowly scoped workload role. Deny one permission at a time
+and learn the resulting diagnostic signal before expanding the topology.
+
 ### Guided work
 
 1. Choose account/project, region, and availability-zone strategy in an ADR.
@@ -262,6 +327,30 @@ Controlled rollout settings, pre-stop/drain timing, schema compatibility, and
 rollback criteria work together. Platform templates should expose critical limits
 and failure behavior rather than hide them behind opaque abstraction.
 
+### Start with a concrete situation
+
+An API process has started, but its database migration check is still running. If
+the platform sends traffic now, requests fail. A startup probe says initialization
+is unfinished; readiness says whether traffic is currently safe; liveness says
+whether restarting the process may help.
+
+Walk through three states:
+
+```text
+starting: startup=false, readiness=false
+serving:  startup=true,  readiness=true,  liveness=true
+DB down:  startup=true,  readiness=false, liveness=true
+```
+
+Restarting during the database outage does not repair PostgreSQL, so liveness stays
+healthy while readiness removes the instance from traffic. Inject the wrong probe
+behavior in a disposable environment and observe the restart loop or failed rollout
+before setting production timings.
+
+An orchestrator reconciles desired process state; it does not understand order
+correctness, transaction safety, or schema compatibility. Those remain explicit
+application contracts.
+
 ### Guided work
 
 1. Deploy to a local or isolated non-production Kubernetes environment.
@@ -328,6 +417,26 @@ priority, due/trigger, verification, and closure evidence.
 Cost includes compute, database, storage, network, observability, licenses, engineering
 time, cognitive load, and on-call burden. Optimize cost per useful outcome without
 removing required safety margin.
+
+### Start with a concrete situation
+
+Define one user outcome before building dashboards: "A valid order request completes
+successfully within 750 ms." The service-level indicator measures the proportion of
+eligible requests meeting that outcome. The service-level objective sets the target
+over a window. The remaining unsuccessful fraction is the error budget.
+
+Now imagine the budget begins burning quickly. The page should lead to a practiced
+response:
+
+```text
+alert -> confirm user impact -> identify first failing boundary
+      -> apply bounded mitigation -> verify SLI and data recovery
+```
+
+Run one game day where database latency grows gradually. Record when users were
+affected, when the alert fired, which evidence found the bottleneck, which action
+reduced harm, and how durable state was verified. The incident review should improve
+the system and response process rather than reduce the event to one person's error.
 
 ### Guided work
 

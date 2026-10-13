@@ -33,6 +33,28 @@ PostgreSQL adapter. Follow one request through those three roles while reading t
 lesson. A boundary earns its place when it protects a different responsibility or
 testable risk, not when it makes a folder diagram look symmetrical.
 
+### Before you start: architecture is assignment of responsibility
+
+The word *architecture* can sound like diagrams and frameworks. In this lesson it
+means deciding which code is responsible for each decision:
+
+- the **handler** understands HTTP;
+- the **use case** coordinates one user action and its business rules;
+- the **domain model** names valid business state;
+- the **adapter** translates between the application and an external mechanism such
+  as PostgreSQL;
+- `main` constructs the concrete pieces and connects them.
+
+Use one change as a test. Suppose the public JSON field changes from `product_id` to
+`productId`. The HTTP representation should change, but the inventory rule and SQL
+transaction should not. Suppose the inventory reservation query changes. The
+adapter should change, but the public JSON should not. A boundary is useful when it
+contains that kind of change.
+
+Whenever a new type or interface appears, ask: "Which change is this protecting the
+rest of the program from?" If there is no concrete answer, the abstraction may be
+ceremony rather than architecture.
+
 ## 1. Architecture manages reasons to change
 
 Architecture is not a target number of folders. It keeps volatile concerns from

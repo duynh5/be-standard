@@ -40,6 +40,29 @@ operation such as deleting expired idempotency rows in bounded batches. If exact
 one active scheduler is required, use a maintained lease/lock with clear expiry and
 fencing rather than an in-memory boolean.
 
+### Start with a concrete situation
+
+After an order commits, the system must send a confirmation email. Starting a
+goroutine is tempting, but the process may restart one millisecond later and erase
+that work. Instead, commit a durable job record before claiming success.
+
+Now examine three crash points:
+
+```text
+1. Worker crashes before sending        -> another attempt must send it.
+2. Worker sends, then crashes            -> another attempt may send again.
+3. Worker marks complete, then crashes   -> no new attempt is needed.
+```
+
+Case 2 explains at-least-once execution. The queue cannot atomically change both
+its database row and an external email provider. Give the email a stable message
+identity so a repeated attempt is harmless or can be reconciled.
+
+A **lease** means "worker A may process this job until time T." It does not kill A
+at T. A paused A can resume after worker B receives a new lease. A unique claim
+token on every attempt lets completion say, "update this job only if I still own the
+current claim." Build this stale-worker experiment before adding concurrency.
+
 ### Guided work
 
 1. Define the confirmation-job schema, states, bounded payload, and retention.
@@ -114,6 +137,34 @@ Consumers must still handle redelivery and version-compatible older events.
 an email provider still receives a duplicate request. End-to-end safety comes from
 idempotent effect identity and reconciliation.
 
+### Start with a concrete situation
+
+Order `O-42` commits, and another service must learn that it was placed. Two naive
+orders of operations both have a fatal gap:
+
+```text
+commit order -> crash -> publish event     // committed order, missing event
+publish event -> crash -> roll back order  // event describes an order that vanished
+```
+
+The transactional outbox writes the order and an `OrderPlaced` row in the same
+PostgreSQL transaction:
+
+```text
+BEGIN
+  INSERT order O-42
+  INSERT outbox event E-91 for O-42
+COMMIT
+```
+
+After commit, a relay may publish E-91 repeatedly until publication is recorded. A
+consumer records E-91 in an inbox beside its own state change. If E-91 arrives
+again, the inbox proves that this consumer already applied it.
+
+Draw the producer database, broker, and consumer database as three separate boxes.
+There is no transaction covering all three. Outbox, retry, inbox, and idempotent
+effects are the explicit bridges across those gaps.
+
 ### Guided work
 
 1. Define an `OrderPlaced` contract with owner, event ID, version, ordering key,
@@ -186,6 +237,33 @@ availability.
 Raft uses leader election, replicated logs, majority commitment, and term/index rules
 to preserve safety. Learn to explain it, but delegate consensus to maintained
 databases, brokers, orchestrators, or coordination systems.
+
+### Start with a concrete situation
+
+Service A sends `reserve TEA-001` to service B. B applies the reservation, but the
+response is delayed until A's timeout expires. What does the timeout prove? Only
+that A stopped waiting. It does not prove that B failed.
+
+That uncertainty is the entry point to distributed systems:
+
+```text
+A sent request
+  -> request may be delayed, duplicated, or delivered
+  -> B may act, crash, or reply
+  -> reply may be delayed, duplicated, or lost
+```
+
+Run the first simulator experiment with only these states. Predict the result before
+delivering or dropping each message. Then add clocks, leases, fencing tokens,
+quorums, and leader terms one mechanism at a time. Their purpose is easier to
+understand after you have reproduced the failure they address.
+
+A **partition** means some nodes cannot communicate even though they remain alive.
+A **quorum** is the required subset of replicas for an operation. A **fencing token**
+is an increasing authority number that lets a protected resource reject a stale
+owner. **Consensus** is the stronger problem of agreeing on an ordered history
+despite failures. These mechanisms overlap, but none is a synonym for "the network
+is reliable."
 
 ### Build a deterministic simulator
 

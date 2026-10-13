@@ -28,6 +28,37 @@ visible before code generation.
 Local commands and CI must share one implementation. Make targets may wrap scripts,
 but CI should not contain a second set of hidden build rules.
 
+### Start with a concrete situation
+
+A new developer clones the repository and runs the documented start command. There
+are only two acceptable outcomes: the service starts with validated configuration,
+or it exits with an error that identifies what must be fixed. It must not listen on
+a port and fail later on the first request because a required dependency was never
+configured.
+
+Trace the successful lifecycle before creating packages:
+
+```text
+process starts
+  -> parse and validate configuration
+  -> construct database, services, handlers, and server
+  -> listen and serve
+  -> receive SIGTERM
+  -> stop new work and drain within a deadline
+  -> close dependencies
+  -> exit
+```
+
+`main` is called the **composition root** because it is the place where concrete
+parts are constructed and connected. An architecture decision record (ADR) is a
+short document explaining why an important choice was made, which alternatives were
+considered, and what would cause the choice to be revisited. Neither concept
+requires a framework.
+
+First make the lifecycle work with one trivial health handler. Only then add
+PostgreSQL or business behavior. That isolates process-lifecycle mistakes from
+feature mistakes.
+
 ### Guided work
 
 1. Initialize the module and `cmd/api` command.
@@ -84,6 +115,35 @@ Liveness checks only process life. Readiness checks whether the instance should
 receive traffic and uses bounded dependency probes. Both endpoints must have stable
 semantics documented in OpenAPI.
 
+### Start with a concrete situation
+
+Send one malformed request:
+
+```text
+POST /v1/products
+Content-Type: application/json
+
+{"sku":"TEA-001","unexpected":true}
+```
+
+Follow it through the boundary. The server limits how many bytes it will read, the
+decoder rejects the unknown field, the handler creates a stable public problem, and
+the access logger records the final 400 response. The product use case never runs.
+
+That one path explains the platform's responsibilities:
+
+```text
+untrusted bytes
+  -> protocol limits and decoding
+  -> transport validation
+  -> application call only when valid
+  -> public response encoding
+```
+
+Build and test this negative path before adding several successful endpoints. It
+forces headers, error shape, middleware order, and logging to become observable
+instead of remaining architectural claims.
+
 ### Guided work
 
 1. Define OpenAPI for health and the currently implemented routes.
@@ -137,6 +197,28 @@ integrity barrier under concurrency or alternate writers.
 Every query is parameterized. Rows are closed and terminal iteration errors checked.
 Transactions roll back on every non-commit path. Driver errors are translated only
 when their identity is known; unexpected failures remain visible with context.
+
+### Start with a concrete situation
+
+Two requests try to create `TEA-001` at nearly the same time. Both can check
+"does this SKU exist?" before either inserts. Application code alone therefore
+cannot make the uniqueness promise. A PostgreSQL unique constraint makes one insert
+succeed and the other fail regardless of timing.
+
+Use that race to separate responsibilities:
+
+```text
+application validation -> gives the caller an early, understandable answer
+database constraint    -> remains correct when requests race
+error translation      -> turns a known database outcome into ErrDuplicateSKU
+integration test       -> proves the real database enforces it
+```
+
+Treat the connection pool like a small set of checkout tokens. A query must acquire
+one token, use the connection for bounded work, and return it. If code leaks rows or
+transactions, tokens disappear from circulation until new requests wait or time
+out. Pool configuration is therefore part of correctness under load, not merely a
+performance setting.
 
 ### Guided work
 
@@ -193,6 +275,31 @@ determine whether a next cursor exists.
 
 Document ordering assumptions. A mutable sort key can move records between pages;
 prefer immutable keys or define the consistency tradeoff.
+
+### Start with a concrete situation
+
+Trace one successful product creation all the way through:
+
+```text
+HTTP JSON
+  -> createProductRequest
+  -> CreateProduct command
+  -> authorization and product rules
+  -> narrow repository call
+  -> parameterized INSERT
+  -> Product result
+  -> 201 response
+```
+
+At each arrow, identify what becomes trusted and what representation changes. The
+JSON is caller-controlled. The command includes only fields the application accepts.
+The use case decides whether the principal may create products. PostgreSQL makes SKU
+uniqueness durable. The handler alone chooses status 201 and the response shape.
+
+Implement this one path vertically before building a generic repository or global
+layer hierarchy. Then add one failure at a time: anonymous, authenticated but
+forbidden, duplicate SKU, and malformed cursor. Each failure should stop at the
+boundary that owns it.
 
 ### Guided work
 
@@ -255,6 +362,36 @@ prices so future catalog changes do not rewrite order history.
 
 Scope reads in SQL by both order ID and authenticated customer ID. Wrong-owner and
 nonexistent reads return the same public not-found response.
+
+### Start with a concrete situation
+
+Inventory contains one unit of `TEA-001`. Two customers place an order concurrently:
+
+```text
+Request A reads quantity 1
+Request B reads quantity 1
+Request A decides it can buy
+Request B decides it can buy
+```
+
+If each request later writes `0`, both orders may succeed even though only one unit
+existed. No Go data race is required; the race occurs between database operations.
+
+The protected operation must combine the condition and change:
+
+```sql
+UPDATE products
+SET inventory_quantity = inventory_quantity - 1
+WHERE id = $1
+  AND inventory_quantity >= 1
+RETURNING price_cents;
+```
+
+Only one transaction can successfully obtain the returned row for the final unit.
+The transaction then inserts the order and items before committing. If any insert
+fails, rollback restores the inventory change. The lesson is not "transactions are
+good"; it is that the database must protect the entire business promise at the
+point where concurrent requests meet.
 
 ### Guided work
 

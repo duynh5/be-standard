@@ -5,6 +5,12 @@ This lesson is the detailed companion to Day 1 of the
 It is self-contained: you can complete the required lesson without searching for
 another tutorial. External references are optional sources for deeper study.
 
+If basic Go syntax is rusty, complete the optional
+[Go language refresher](foundations/go-language-refresher.md) first. It teaches the
+syntax and core value semantics as a connected lesson; this Day 1 lesson then
+applies them to backend boundaries, resource ownership, cancellation, and
+concurrency.
+
 ## Learning outcomes
 
 By the end of this lesson, you should be able to:
@@ -21,9 +27,11 @@ By the end of this lesson, you should be able to:
 - distinguish data-race freedom from business correctness;
 - implement and test a concurrency-safe in-memory product store.
 
-Budget about three focused hours. Type the examples instead of copying them when
-possible. The small mistakes you make while typing are useful practice with the
-compiler and test output.
+Use several focused sessions rather than rushing through this lesson. A useful split
+is Sections 1-3 for Go data fundamentals, Sections 4-7 for boundaries and failure
+lifetime, and Sections 8-12 for concurrency and the guided store. Type the examples
+instead of copying them when possible. The small mistakes you make while typing are
+useful practice with compiler and test output.
 
 ### How to use this lesson
 
@@ -360,38 +368,100 @@ func PrintProduct(reader ProductReader, sku string) error {
 }
 ```
 
-The code that needs to read a product should declare the smallest interface it
-needs. This is called defining the interface on the consumer side. It avoids a
-large provider-owned interface that forces every consumer and test double to
-depend on unrelated methods.
+The important part is that `PrintProduct` needs the **ability to get one product**.
+It does not need to know how products are stored. Its parameter therefore describes
+only that requirement. The exercise's `*Store` has `Create`, `Get`, and `List`, but
+it satisfies `ProductReader` because the interface requires only `Get`.
 
-Do not introduce an interface just because one implementation exists. Introduce
-one where a caller needs substitution, isolation in a test, or a real boundary.
+Go checks this when the value is assigned or passed:
 
-Follow the dependency direction in the example:
+```go
+memoryStore := NewStore()
 
-```text
-PrintProduct needs Get
-        |
-        +-- declares ProductReader
-                         ^
-                         |
-              *Store happens to satisfy it
+var reader ProductReader = memoryStore // Allowed because *Store has Get.
+_ = PrintProduct(reader, "TEA-001")
 ```
 
-`Store` does not need to know that `PrintProduct` exists. A test can provide a tiny
-fake with only `Get`, and a future PostgreSQL adapter can satisfy the same consumer
-without inheriting unrelated store methods. This is why the interface normally
-lives beside the code that consumes it.
+A future `*PostgresStore` could also be passed to `PrintProduct` if it provides the
+same `Get(string) (Product, error)` method. `PrintProduct` would not change; only the
+concrete value supplied by `main` would change.
 
-You can ask the compiler to verify an implementation:
+Neither concrete type declares `implements ProductReader`. Go checks its method set
+automatically when the value is used where a `ProductReader` is required.
+
+### Why the consumer declares the interface
+
+`PrintProduct` is the **consumer** because it consumes another value's `Get`
+behavior. It should declare the smallest interface that describes what it actually
+calls.
+
+Suppose the storage package instead declares this broad interface:
+
+```go
+type ProductStore interface {
+    Create(Product) error
+    Get(string) (Product, error)
+    List() []Product
+    Delete(string) error
+}
+```
+
+`PrintProduct` calls only `Get`, but accepting `ProductStore` would require every
+alternative implementation to provide all four methods. A test fake would need
+meaningless `Create`, `List`, and `Delete` methods merely to test product printing.
+The consumer-owned `ProductReader` avoids that coupling.
+
+For example, a test can supply this tiny fake:
+
+```go
+type fakeProductReader struct {
+    product Product
+    err     error
+}
+
+func (f fakeProductReader) Get(string) (Product, error) {
+    return f.product, f.err
+}
+
+func TestPrintProduct(t *testing.T) {
+    reader := fakeProductReader{
+        product: Product{SKU: "TEA-001", Name: "Green tea"},
+    }
+
+    if err := PrintProduct(reader, "TEA-001"); err != nil {
+        t.Fatalf("PrintProduct() error = %v", err)
+    }
+}
+```
+
+This is useful substitution: production can supply real storage while the test
+supplies a controlled result. If no caller needs substitution or a boundary, keep
+using the concrete type; do not add an interface solely because interfaces exist.
+
+### What the compiler assertion means
+
+You may explicitly ask the compiler to verify that `*Store` satisfies the
+interface:
 
 ```go
 var _ ProductReader = (*Store)(nil)
 ```
 
-This declaration allocates nothing. It fails compilation if `*Store` does not
-implement `ProductReader`.
+Read it from right to left:
+
+1. `(*Store)(nil)` is a nil value whose type is `*Store`.
+2. The declaration attempts to assign that value to a variable of type
+   `ProductReader`.
+3. `_` is the blank identifier, so no usable variable is retained.
+4. The assignment compiles only if the method set of `*Store` contains
+   `Get(string) (Product, error)`.
+
+The line performs a compile-time compatibility check and allocates no `Store`. If
+`Get` is removed or its signature changes, compilation fails at this assertion.
+
+The `*` matters. If `Get` has a pointer receiver such as
+`func (s *Store) Get(...)`, then `*Store` satisfies the interface. The non-pointer
+type `Store` does not have that pointer-receiver method in its method set.
 
 ## 5. Errors are values with identity
 
@@ -419,8 +489,14 @@ Add context while preserving the original error with `%w`:
 return Product{}, fmt.Errorf("get product %q: %w", sku, ErrNotFound)
 ```
 
-The wrapped message is useful to a human, while `errors.Is` follows the wrapping
-chain and retains machine-checkable identity:
+The wrapped message is useful to a human. When code needs to inspect the error,
+`errors.Is` and `errors.As` answer different questions:
+
+- `errors.Is`: "Does the wrapping chain contain this particular error value?"
+- `errors.As`: "Does the wrapping chain contain an error of this type, and can I
+  extract it?"
+
+Use `errors.Is` when you already know the sentinel value you are looking for:
 
 ```go
 if errors.Is(err, ErrNotFound) {
@@ -428,14 +504,46 @@ if errors.Is(err, ErrNotFound) {
 }
 ```
 
-Use `errors.As` when you need a particular error type and its fields:
+Here, the question is specifically whether `err` contains the `ErrNotFound` value.
+
+Use `errors.As` when you do not know the particular error value, but you want to
+know whether an error in the chain has a particular type or implements a particular
+interface. On success, `errors.As` also assigns that matching error to your variable
+so you can inspect its fields or call its methods:
 
 ```go
+type ValidationError struct {
+    Field   string
+    Message string
+}
+
+func (e *ValidationError) Error() string {
+    return e.Field + ": " + e.Message
+}
+
 var validationErr *ValidationError
 if errors.As(err, &validationErr) {
     fmt.Println(validationErr.Field)
 }
 ```
+
+Here, the question is whether any error in the chain is a `*ValidationError`.
+`&validationErr` is passed because `errors.As` needs to populate the variable with
+the matching error. A compact way to remember the distinction is: **`Is` compares
+with a value; `As` finds and extracts a type.**
+
+This project uses Go 1.26, which also provides the generic `errors.AsType` and
+recommends it for most new code:
+
+```go
+validationErr, ok := errors.AsType[*ValidationError](err)
+if ok {
+    fmt.Println(validationErr.Field)
+}
+```
+
+You will still encounter `errors.As` in existing Go code, so understanding its
+pointer target remains useful. Both forms search the wrapped error chain by type.
 
 Avoid comparing error text. Messages are for people and may change; identities and
 types are contracts. Handle an error once: either recover from it meaningfully or
@@ -464,8 +572,25 @@ operation and SKU; an HTTP handler later decides that `ErrNotFound` maps to a pu
 
 ## 6. Resource ownership and `defer`
 
-Whoever successfully acquires a resource is normally responsible for releasing
-it. Place the `defer` immediately after confirming acquisition succeeded:
+A resource is something the program temporarily holds and must give back: an open
+file descriptor, network response body, database connection, result rows,
+transaction, lock, or timer. If it is not released, later work may run out of that
+resource or wait forever.
+
+**Ownership** means cleanup responsibility. It does not mean that no other code may
+use the value. The function that successfully acquires a resource normally becomes
+responsible for releasing it exactly once:
+
+```text
+acquire succeeds -> this function owns cleanup -> use resource -> release resource
+acquire fails    -> no resource exists          -> return error
+```
+
+Go's garbage collector manages memory, but it is not a prompt cleanup mechanism for
+database rows, transactions, locks, or network bodies. Those resources have an
+explicit operation such as `Close`, `Rollback`, `Unlock`, or `Stop`.
+
+Place the `defer` immediately after confirming acquisition succeeded:
 
 ```go
 file, err := os.Open("products.json")
@@ -480,6 +605,138 @@ order. Typical backend uses include closing response bodies and query rows,
 rolling back a transaction unless it commits, unlocking a mutex, and stopping a
 timer.
 
+For an HTTP response, defer the close immediately after `Do` succeeds. The body is
+then closed even if a later status check or body read returns early:
+
+```go
+func fetchBody(ctx context.Context, client *http.Client, url string) ([]byte, error) {
+    req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
+    if err != nil {
+        return nil, err
+    }
+
+    resp, err := client.Do(req)
+    if err != nil {
+        return nil, err
+    }
+    defer resp.Body.Close()
+
+    if resp.StatusCode != http.StatusOK {
+        return nil, fmt.Errorf("unexpected status: %s", resp.Status)
+    }
+
+    body, err := io.ReadAll(resp.Body)
+    if err != nil {
+        return nil, fmt.Errorf("read response body: %w", err)
+    }
+    return body, nil
+}
+```
+
+SQL rows also own resources. Close them when the function returns, and check
+`rows.Err()` after iteration because an error may occur while fetching later rows:
+
+```go
+func listProducts(ctx context.Context, db *sql.DB) ([]Product, error) {
+    rows, err := db.QueryContext(ctx, `SELECT sku, name FROM products`)
+    if err != nil {
+        return nil, err
+    }
+    defer rows.Close()
+
+    var products []Product
+    for rows.Next() {
+        var product Product
+        if err := rows.Scan(&product.SKU, &product.Name); err != nil {
+            return nil, err
+        }
+        products = append(products, product)
+    }
+    if err := rows.Err(); err != nil {
+        return nil, err
+    }
+
+    return products, nil
+}
+```
+
+A transaction can schedule a rollback as soon as it begins. If any operation
+returns early, the rollback runs. After a successful commit, the deferred rollback
+does not undo the commit:
+
+```go
+tx, err := db.BeginTx(ctx, nil)
+if err != nil {
+    return err
+}
+defer tx.Rollback() // Safe after Commit; it returns sql.ErrTxDone.
+
+if _, err := tx.ExecContext(ctx, insertProductSQL, product.SKU, product.Name); err != nil {
+    return err // Rollback runs here.
+}
+
+return tx.Commit()
+```
+
+A deferred unlock keeps every return path from leaving a mutex locked:
+
+```go
+s.mu.Lock()
+defer s.mu.Unlock()
+
+if _, exists := s.products[product.SKU]; exists {
+    return ErrDuplicateSKU // Unlock still runs.
+}
+s.products[product.SKU] = product
+```
+
+A timer should be stopped when the function no longer needs it. If the context is
+cancelled first, the deferred call stops the still-pending timer:
+
+```go
+timer := time.NewTimer(500 * time.Millisecond)
+defer timer.Stop()
+
+select {
+case <-timer.C:
+    return context.DeadlineExceeded
+case <-ctx.Done():
+    return ctx.Err()
+}
+```
+
+Last-in-first-out ordering is useful when resources depend on each other. If a
+transaction is acquired first and its query rows second, defer the cleanup after
+each acquisition; the rows close before the transaction rolls back.
+
+```go
+tx, err := db.BeginTx(ctx, nil)
+if err != nil {
+    return err
+}
+defer tx.Rollback() // Registered first, so it runs second.
+
+rows, err := tx.QueryContext(ctx, query)
+if err != nil {
+    return err
+}
+defer rows.Close() // Registered second, so it runs first.
+```
+
+Picture deferred calls as a stack:
+
+```text
+registration order       return-time order
+
+1. tx.Rollback()         1. rows.Close()
+2. rows.Close()          2. tx.Rollback()
+```
+
+The rows are the inner resource: they use the transaction's database connection.
+Closing the inner resource before ending its outer transaction keeps the dependency
+alive until its user is finished. A general rule is: acquire from outer to inner,
+then release from inner to outer.
+
 Do not put an unbounded number of defers inside a long-running loop: they remain
 pending until the surrounding function returns. Extract one iteration into a
 small function when each iteration owns a resource.
@@ -489,58 +746,167 @@ check the close or flush error instead of discarding it.
 
 ## 7. Context carries cancellation across boundaries
 
-`context.Context` communicates cancellation, deadlines, and request-scoped values
-across API boundaries.
+Start with a concrete failure. A client asks for a product, the server begins a slow
+database query, and then the client disconnects. The result has nowhere to go, but
+without a cancellation signal the query may continue consuming a database
+connection and CPU.
+
+`context.Context` solves the communication part of that problem. It carries a
+signal saying that work is no longer needed, and it may also carry a deadline. Code
+passes the same context down through each operation that belongs to the request:
+
+```text
+HTTP request
+    -> handler
+        -> product service
+            -> database query
+```
+
+If the client disconnects or the request deadline expires, the request context is
+cancelled. Each layer either observes that signal itself or passes the context to a
+context-aware API:
+
+```text
+client disconnects
+    -> request context is cancelled
+        -> database query observes cancellation
+            -> query returns an error
+                -> error travels back to the handler
+```
+
+### Pass the context down
+
+The HTTP server creates a context for each request. The handler obtains it with
+`r.Context()` and passes it down rather than creating a new unrelated context:
 
 ```go
-func LoadProduct(ctx context.Context, store ProductReader, sku string) (Product, error) {
+func (h *Handler) GetProduct(w http.ResponseWriter, r *http.Request) {
+    sku := r.PathValue("sku")
+
+    product, err := h.products.Get(r.Context(), sku)
+    if err != nil {
+        // Translate the error into an HTTP response.
+        return
+    }
+
+    // Encode product into the response.
+}
+```
+
+The repository passes that same context to the database call:
+
+```go
+func (r *Repository) Get(ctx context.Context, sku string) (Product, error) {
+    row := r.db.QueryRowContext(
+        ctx,
+        `SELECT sku, name FROM products WHERE sku = $1`,
+        sku,
+    )
+
+    var product Product
+    if err := row.Scan(&product.SKU, &product.Name); err != nil {
+        return Product{}, fmt.Errorf("get product %q: %w", sku, err)
+    }
+    return product, nil
+}
+```
+
+The important relationship is not that context belongs to HTTP or PostgreSQL. It
+belongs to the **lifetime of the operation**. The query is useful only while the
+request that needs its result is still alive.
+
+### Cancellation is a notification, not a kill switch
+
+Calling a cancel function does not forcibly stop a goroutine. It closes the
+context's `Done` channel. Work stops only when code checks that channel or calls an
+API, such as `QueryRowContext`, that checks it internally.
+
+For code that waits on a channel, observe cancellation with `select`:
+
+```go
+func waitForProduct(ctx context.Context, results <-chan Product) (Product, error) {
     select {
+    case product := <-results:
+        return product, nil
     case <-ctx.Done():
         return Product{}, ctx.Err()
-    default:
-        return store.Get(sku)
     }
 }
 ```
 
-Rules to follow:
+Read the two cases as: "return the product if it arrives first; otherwise return the
+context error if cancellation arrives first." A single cancellation check before a
+long operation is insufficient because cancellation may happen after that check.
+The blocking operation itself must keep observing the context.
 
-- accept `context.Context` as the first parameter;
-- do not store it in a struct;
-- pass it to downstream calls that support cancellation;
-- do not pass `nil`; use `context.Background()` when no parent exists;
-- call the returned cancel function when creating a timeout or cancellation scope;
-- use context values only for request-scoped metadata such as trace identity, not
-  ordinary optional function parameters.
+`ctx.Err()` explains why the work ended:
+
+- `context.Canceled` means someone explicitly cancelled it, commonly because the
+  client disconnected or a parent operation stopped;
+- `context.DeadlineExceeded` means its allowed time expired.
+
+### Add a shorter deadline when this layer owns one
+
+A parent context may have no deadline or may allow more time than one dependency
+should receive. Create a child context when the current layer owns a shorter limit:
 
 ```go
-ctx, cancel := context.WithTimeout(parent, 500*time.Millisecond)
+queryCtx, cancel := context.WithTimeout(ctx, 500*time.Millisecond)
 defer cancel()
+
+product, err := repository.Get(queryCtx, sku)
 ```
 
-Cancellation is cooperative. Calling `cancel` closes `ctx.Done()`, but work stops
-only if the receiving code observes the signal or calls an API that does.
+`WithTimeout` returns both the child context and a `cancel` function. Deferring
+`cancel` releases the timer and other bookkeeping as soon as this function finishes,
+even when the deadline did not expire.
 
-A deadline normally travels down the call stack while the error travels back up:
+Do not replace the received context with `context.Background()` in the middle of a
+request:
 
-```text
-HTTP request context (deadline)
-        -> use case
-            -> PostgreSQL query
-
-PostgreSQL observes cancellation
-        <- returns context deadline error
-            <- use case adds operation context
-                <- handler maps the outcome
+```go
+// Wrong: disconnect and deadline signals from ctx are lost.
+product, err := repository.Get(context.Background(), sku)
 ```
 
-Creating a fresh `context.Background()` in the middle would break that chain. The
-database query could continue after the client disconnected or the server began
-shutdown. Pass the received context unless the work is intentionally detached and
-has a separately owned lifetime.
+Use `context.Background()` only at a true root where no parent operation exists,
+such as process startup. Work intentionally detached from a request needs its own
+documented owner, lifetime, cancellation, and error handling; merely swapping in
+`Background` creates unowned work.
 
-The in-memory store does not perform blocking I/O, so its first version does not
-need context parameters. PostgreSQL and HTTP operations added later will.
+### Context values have a narrow purpose
+
+A context can also carry small request-scoped metadata that must cross API
+boundaries, such as a trace identity or authenticated principal. It is not a general
+parameter bag. Ordinary inputs such as SKU, page size, and feature options should
+remain explicit function parameters so callers can see what a function requires.
+
+### Rules after the mental model
+
+- accept `context.Context` as the first parameter for operations that may wait or
+  cross a process, network, or storage boundary;
+- pass the received context to downstream work belonging to the same operation;
+- do not store request contexts in long-lived structs;
+- never pass `nil`; use `context.Background()` only at a true root;
+- call the returned cancel function when creating a child cancellation or timeout;
+- remember that cancellation is cooperative: the work must observe it;
+- reserve context values for request-scoped cross-boundary metadata.
+
+The current in-memory store performs no blocking I/O, so adding context to its
+`Get` method would not yet make it more cancellable. The PostgreSQL repository added
+later accepts context because acquiring a connection and running a query can block.
+
+Before moving on, predict these outcomes:
+
+1. The context is cancelled before `QueryRowContext` starts: the query should return
+   a context-related error without useful work completing.
+2. The context is cancelled while the query waits: the database API should stop the
+   wait and return an error.
+3. A long function accepts context but never checks or passes it: cancellation has
+   no effect on that function merely because the parameter exists.
+
+The third case is the important test of understanding. Context enables cooperative
+cancellation; it does not automatically make code cancellable.
 
 ## 8. Concurrency: goroutines, synchronization, and correctness
 

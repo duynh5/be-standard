@@ -1,7 +1,37 @@
 # Backend Implementation Phases: Key-Concept Refresher
 
-Use this guide to restore the mental model behind a phase quickly. It intentionally does not repeat the roadmap's deliverables or acceptance criteria.
-The [backend learning roadmap](../BACKEND_LEARNING_ROADMAP.md) remains authoritative for what to build and how completion is judged.
+Use this guide to restore the mental model behind a phase quickly. It is an
+**after-learning review guide**, not the first explanation of these subjects. If a
+term is unfamiliar, open the corresponding phase lesson and work through its
+concrete situation before returning here. This guide intentionally does not repeat
+the roadmap's deliverables or acceptance criteria. The
+[backend learning roadmap](../BACKEND_LEARNING_ROADMAP.md) remains authoritative
+for what to build and how completion is judged.
+
+## How to use this refresher actively
+
+Reading condensed bullets can create recognition without understanding. Use this
+four-step loop for one phase at a time:
+
+1. Read only the phase title and memory anchors.
+2. Without looking, explain one concrete success and one concrete failure.
+3. Answer the self-check questions in complete sentences.
+4. Reopen the phase lesson wherever your explanation becomes vague.
+
+For example, do not merely repeat "timeouts are ambiguous." Construct the event
+sequence:
+
+```text
+Ordering sends reserve-O-42.
+Inventory commits it.
+The response is lost.
+Ordering reaches its timeout.
+```
+
+Then explain what the timeout proves, why a blind retry is unsafe, which stable
+operation identity resolves the ambiguity, and how reconciliation discovers the
+final state. If you cannot do that, the concept needs another learning pass rather
+than more memorization.
 
 ## How the phases fit together
 

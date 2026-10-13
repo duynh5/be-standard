@@ -20,8 +20,10 @@ By the end of this lesson, you should be able to:
 - test handlers with `httptest`;
 - explain graceful shutdown and cancellation propagation.
 
-Budget about three focused hours. Build only the endpoints listed here. PostgreSQL,
-authentication, and telemetry arrive on later days.
+Use multiple sessions if HTTP is new: first learn the request/response contract,
+then build bounded decoding and middleware, and finally add shutdown and tests.
+Build only the endpoints listed here. PostgreSQL, authentication, and telemetry
+arrive on later days.
 
 ### How to use this lesson
 
@@ -37,6 +39,35 @@ bytes arrive -> HTTP is parsed -> input is bounded and decoded
 At every arrow ask two questions: "what can the caller control?" and "what resource
 must be bounded?" This keeps protocol validation, business decisions, and server
 resource management from collapsing into one large handler.
+
+### Before you start: the six nouns in one request
+
+Do not begin by memorizing status codes. First identify the participants:
+
+- the **client** sends a request, such as a browser, mobile app, or another service;
+- the **server** listens for requests and sends responses;
+- a **request** contains a method, target, headers, and sometimes a body;
+- a **response** contains a status, headers, and sometimes a body;
+- a **handler** is the Go function responsible for one class of request;
+- **middleware** is code that runs around handlers for shared concerns such as
+  request IDs, logging, authentication, or panic recovery.
+
+Use one request throughout the lesson:
+
+```text
+POST /v1/products
+Content-Type: application/json
+
+{"sku":"TEA-001","name":"Green tea"}
+```
+
+The client is asking the server to create a product. Every later topic answers one
+question about that conversation: how the server limits it, decodes it, validates
+it, performs the operation, reports the outcome, and stops cleanly.
+
+Before continuing, be able to point to the method (`POST`), target
+(`/v1/products`), representation metadata (`Content-Type`), and body in the example.
+That vocabulary is the foundation for the rest of the lesson.
 
 ## 1. Follow one request through the system
 

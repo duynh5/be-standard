@@ -11,6 +11,31 @@ You should be able to turn vague requirements into examples, define a shared
 language, distinguish entities from value objects, identify invariants, draw a state
 machine, and propose bounded contexts without treating them as deployments.
 
+## 0. Start with one sentence that is not yet a requirement
+
+Suppose someone says, "Customers can cancel orders." It sounds clear until two
+people try to implement it. One assumes cancellation is allowed until shipment;
+another assumes only newly placed orders can be cancelled. One restores inventory
+immediately; another leaves that to fulfillment. Both can write internally
+consistent code and still build different products.
+
+Domain discovery turns that vague sentence into shared, testable decisions. You are
+not designing tables or endpoints yet. You are discovering what the system must
+mean.
+
+Work from one concrete example:
+
+```text
+Order O-42 belongs to customer C-17.
+It contains two units of TEA-001.
+Its current state is placed.
+C-17 asks to cancel it at 10:05.
+```
+
+Now ask what must already be true, what changes, what becomes impossible afterward,
+and what another concurrent action could do. Each unanswered question becomes an
+explicit assumption or open decision instead of silently becoming code.
+
 ## 1. Treat requirements as hypotheses
 
 Statements such as "customers can cancel orders" hide decisions:

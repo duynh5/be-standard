@@ -34,6 +34,33 @@ For example, "inventory never becomes negative" first becomes an invariant, then
 The database is not replacing application logic. It is the last shared authority
 when concurrent requests or another writer bypass an earlier application check.
 
+### Before you start: translate database words into responsibilities
+
+Keep this small vocabulary beside you:
+
+| Term | Plain-language meaning |
+| --- | --- |
+| Database | The durable collection of related application data |
+| Table | A named collection of rows describing one kind of fact |
+| Row | One stored fact, such as one product |
+| Column | One attribute of every row, such as `sku` or `price_cents` |
+| Constraint | A rule PostgreSQL refuses to let stored data violate |
+| Query | A request to read or change data |
+| Connection | One live conversation between the application and PostgreSQL |
+| Transaction | Several changes that become durable together or not at all |
+| Migration | A versioned change to the database structure |
+| Index | An extra lookup structure that trades write/storage cost for faster reads |
+
+Follow one business promise through the whole lesson:
+
+> Two customers competing for the final unit must never create two successful
+> orders or make inventory negative.
+
+The application can check inventory, but two requests can check at the same time.
+PostgreSQL therefore becomes the final coordinator. Modeling, constraints, queries,
+transactions, locks, and integration tests are different tools used to preserve
+that one promise. Do not study them as unrelated database features.
+
 ## 1. Relational modeling begins with invariants
 
 A table is not merely a serialized Go struct. It represents durable facts and

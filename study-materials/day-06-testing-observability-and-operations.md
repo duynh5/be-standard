@@ -35,6 +35,33 @@ Tests provide evidence before release; telemetry and operational exercises provi
 evidence while the system runs and fails. Neither category substitutes for the
 other.
 
+### Before you start: evidence for one failed order
+
+Use this concrete incident throughout the lesson:
+
+> A customer submits a valid order. After 750 milliseconds the request fails because
+> every database connection is busy.
+
+Different evidence answers different questions:
+
+- a **test** proves beforehand that a bounded pool wait returns an expected error;
+- a **log** records that this particular request failed;
+- a **metric** shows whether many requests are failing or slowing down;
+- a **trace** shows where this request spent its 750 milliseconds;
+- an **alert** decides whether the impact needs human attention;
+- a **runbook** tells that person what to inspect and which safe action to consider.
+
+Two service-reliability terms appear later:
+
+- a **service-level indicator (SLI)** is the measurement, such as the proportion of
+  valid order requests completing successfully within 750 milliseconds;
+- a **service-level objective (SLO)** is the target for that measurement, such as
+  99.9% over 30 days.
+
+Testing and observability are not separate piles of tooling. They are ways of
+turning claims such as "orders fail promptly under saturation" into evidence before
+and after deployment.
+
 ## 1. Tests answer different questions
 
 No single test style proves the whole service.

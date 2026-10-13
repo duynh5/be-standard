@@ -32,6 +32,33 @@ If the chain loses identity or reproducibility at any point, a passing test cann
 tell you exactly what reached the environment. If recovery is only a written hope,
 a successful deployment does not prove the system can be operated safely.
 
+### Before you start: delivery continues after compilation
+
+Suppose the program works on your laptop. Production still needs answers to these
+questions:
+
+- Which exact binary or container was tested?
+- Which configuration and secrets will it receive?
+- Can the new application run with the current database schema?
+- What happens to requests while an instance stops?
+- How will operators know the release is unhealthy?
+- Can the previous version still understand data written by the new one?
+- Can lost or damaged data actually be restored?
+
+This lesson follows one release from source revision to recovery rehearsal. The key
+terms are:
+
+- an **artifact** is the exact built output being promoted;
+- **continuous integration (CI)** runs the repository's verification automatically;
+- a **rolling deployment** temporarily runs old and new versions together;
+- **roll back** means return to an older compatible artifact;
+- **roll forward** means deploy a new corrective change;
+- **recovery point objective (RPO)** bounds acceptable data loss in time;
+- **recovery time objective (RTO)** bounds acceptable restoration time.
+
+Treat every production claim as unfinished until a command, test, observation, or
+drill demonstrates it.
+
 ## 1. One immutable artifact, many environments
 
 Build source code once and promote the same artifact through environments. Runtime

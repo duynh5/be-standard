@@ -43,6 +43,30 @@ Search and analytics are derived views. Authoritative data/events must rebuild t
 Track source position/version, lag, failed documents, and reconciliation differences.
 Do not write business truth only to search.
 
+### Start with a concrete situation
+
+The service asks a payment provider to charge operation `pay-O-42`. The provider
+times out after receiving the request. Retrying without a stable provider
+idempotency key may charge twice; reporting failure may hide a successful charge.
+The adapter needs a way to retry or query the same provider operation and translate
+its outcomes into application-owned states.
+
+Now reverse the direction. The provider later sends a webhook saying the payment
+succeeded. Treat the body as hostile until its size, signature, timestamp, and event
+identity are verified. Store durable work before replying if the provider interprets
+a successful response as final acknowledgement.
+
+Server-side request forgery (SSRF) occurs when an attacker makes the service connect
+to an unintended address, often through a supplied webhook URL. HTTPS syntax alone
+does not make a destination safe: DNS can resolve to private or link-local systems,
+and redirects can change the destination after validation. Destination policy,
+resolution checks, redirect handling, and restricted network egress must work
+together.
+
+Learn one outbound call and one inbound webhook completely before adding uploads,
+email, search, and analytics. The same boundary questions—identity, limits,
+ambiguity, retry, durable state, and observability—then become recognizable.
+
 ### Guided work
 
 1. Choose one outbound provider and define an application-owned adapter interface.
@@ -124,6 +148,30 @@ Regression diagnosis starts from evidence: reproduce, bound first bad version/ti
 compare code/config/schema/data/dependency changes, form one hypothesis, test it,
 add regression protection, and verify recovery. Avoid masking the symptom with a
 broad fallback.
+
+### Start with a concrete situation
+
+A legacy endpoint returns an empty list when a customer has no orders. The intended
+contract was never written, and a proposed refactor would return `null`. Before
+calling either behavior correct, inspect clients, tests, examples, telemetry, and
+support history. If consumers rely on `[]`, capture that behavior with a
+characterization test.
+
+The safe sequence is:
+
+```text
+observe actual behavior
+  -> identify relied-on contract
+  -> pin it with a focused test
+  -> create a small seam
+  -> refactor without changing the contract
+  -> deliberately migrate later if the contract should change
+```
+
+A characterization test is not praise for the old design. It is an alarm that
+tells you whether a supposedly behavior-preserving change altered something real.
+Use the same discipline for upgrades, feature flags, canaries, and data repairs:
+first define the boundary and evidence, then make the reversible change.
 
 ### Guided work
 
@@ -214,6 +262,39 @@ security, and recovery. Do not claim proof from irrelevant checks.
 Leadership includes reviewing someone else's change for data safety, security,
 operability, simplicity, and missing tests; writing a concise operational handoff;
 and teaching one concept so another engineer can operate or extend it.
+
+### Start with a concrete situation
+
+Choose a capstone such as order cancellation with inventory release. Begin with a
+single concrete case:
+
+```text
+Customer C-17 owns placed order O-42.
+O-42 reserved two units of TEA-001.
+C-17 requests cancellation twice while Inventory is briefly unavailable.
+```
+
+From that case derive the questions the design must answer: who may cancel, which
+states allow it, whether repeated cancellation is safe, how inventory release is
+identified, what happens during an ambiguous timeout, how operators find stuck
+work, and what the customer sees while completion is pending.
+
+Trace every important requirement across the system:
+
+```text
+requirement
+  -> API or event contract
+  -> state transition and implementation
+  -> deterministic test
+  -> production signal
+  -> operator recovery step
+```
+
+The capstone is not a contest to use every earlier technology. Strong engineering
+judgment includes rejecting mechanisms the requirement does not need and naming
+what could be deleted if the problem became simpler. Another engineer should be
+able to review, deploy, diagnose, and extend the result without private knowledge
+from its author.
 
 ### Guided work
 

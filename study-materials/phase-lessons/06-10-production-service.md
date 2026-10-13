@@ -37,6 +37,31 @@ Store enough response data to reproduce the public status and body. Avoid storin
 secrets or unstable transport headers. Define retention from the maximum client
 retry window plus operational margin; cleanup must be bounded and observable.
 
+### Start with a concrete situation
+
+A client sends `POST /v1/orders` and waits. The server commits order `O-42`, but the
+network connection breaks before the response reaches the client. From the client's
+view, success and failure look identical: it received no answer.
+
+If the client repeats an ordinary `POST`, the service may create a second order. An
+idempotency key lets the client say, "this is another attempt at the same logical
+operation":
+
+```text
+customer: C-17
+key:      checkout-8f31
+request:  2 x TEA-001
+```
+
+The first request stores the key, a fingerprint of the normalized request, and the
+completed outcome in the same transaction as the order. A retry with the same key
+and fingerprint receives that stored outcome. The same key with `3 x TEA-001` is
+not a retry; it is conflicting input and must be rejected.
+
+Before implementing the table, write the three observable cases on paper: first
+attempt, identical retry, and conflicting reuse. Then add the concurrent case where
+two identical attempts arrive before either completes.
+
 ### Guided work
 
 1. Require one bounded `Idempotency-Key` on order creation.
@@ -104,6 +129,26 @@ Dashboards follow user symptoms toward resources: request SLI, endpoint breakdow
 dependency latency/errors, pool saturation, process resources, and deployments.
 Alerts page only on actionable sustained impact or imminent exhaustion.
 
+### Start with a concrete situation
+
+At 14:05, order latency rises from 80 ms to 900 ms. A useful observability system
+should let an operator move from symptom to cause:
+
+```text
+metric: order latency rose across many requests
+  -> trace: slow requests spent time waiting for a DB connection
+      -> pool metric: all connections were in use
+          -> log/deployment marker: a new query shipped at 14:03
+```
+
+A log alone cannot establish how widespread the problem is. A metric alone cannot
+show the path of one request. A trace alone may not show whether the example is
+typical. Teach and implement the signals together around one diagnostic question.
+
+Begin with one request ID and one route. Produce a successful request and a failed
+request, then prove you can find their public result, log, trace, and relevant
+metric without adding temporary debug output.
+
 ### Guided work
 
 1. Add build revision/version metadata to startup logs and telemetry resources.
@@ -167,6 +212,25 @@ writes, then remove old structure in a later release.
 Backups are unproven until an isolated restore verifies application invariants and
 measures recovery time and recoverable point.
 
+### Start with a concrete situation
+
+Release B adds a nullable `description` column and starts writing it. During the
+rollout, some instances still run Release A. Ask four questions before deploying:
+
+1. Can A run against the expanded schema?
+2. Can B read rows created before `description` existed?
+3. Can traffic move back to A after B has written data?
+4. What exact signal stops the rollout?
+
+This is why application and schema deployment cannot be treated as one instant.
+Expand first, run compatible versions, migrate data, switch usage, and contract only
+after old versions no longer need the old representation.
+
+Perform the exercise with built artifacts, not just source. Start the old binary
+against the new schema, start the new binary against old rows, and rehearse the
+selected recovery direction. The deployment is understood only when those mixed
+states have observed outcomes.
+
 ### Guided work
 
 1. Add a pinned multi-stage container and strict `.dockerignore`.
@@ -229,6 +293,27 @@ load shedding. Recovery after pressure is as important as peak throughput.
 Caching is justified only when repeated reads create measured latency/load and the
 team can define source of truth, key, TTL, invalidation, stampede prevention,
 failure behavior, and observability.
+
+### Start with a concrete situation
+
+Under a controlled load test, request latency climbs while CPU remains moderate.
+Database-pool wait consumes most of each trace. That evidence suggests connection
+or query pressure; it does not yet prove the pool should be enlarged.
+
+Use one hypothesis at a time:
+
+```text
+Observation: pool wait is high and one product-list query scans many rows.
+Hypothesis: the query lacks an index matching its filter and order.
+Change: add or correct that one index.
+Verification: repeat the identical workload and compare plans, pool wait,
+              latency distribution, throughput, and errors.
+```
+
+If you change the pool, query, cache, and concurrency limit together, an improved
+result teaches nothing about which change mattered. Performance work is an
+experiment: control the workload, change one cause, and preserve correctness tests
+while measuring again.
 
 ### Guided work
 
@@ -295,6 +380,31 @@ can be added in validation stages when supported to limit blocking.
 Base backup plus continuous WAL archiving enables point-in-time recovery. Streaming
 replication supports standby availability but does not replace backups: deletion or
 corruption can replicate. RPO and RTO are measured by restore and promotion drills.
+
+### Start with a concrete situation
+
+Open two database sessions against the same product row. Session A updates it but
+does not commit. Session B tries a conflicting update and waits. You can now observe
+the concepts instead of memorizing them:
+
+```text
+Session A: BEGIN -> UPDATE product -> holds row lock
+Session B: BEGIN -> UPDATE same product -> waits
+Session A: COMMIT
+Session B: continues using the now-current row
+```
+
+Change the experiment so A and B lock two products in opposite orders. The wait can
+become a cycle, and PostgreSQL aborts one transaction as a deadlock victim. Repeat
+with the same sorted lock order and observe why the cycle no longer forms for that
+path.
+
+Multi-version concurrency control (MVCC) is PostgreSQL's way of letting transactions
+read consistent row versions while writes occur. Write-ahead logging (WAL) records
+changes needed for crash recovery and replication. Point-in-time recovery (PITR)
+combines a base backup with later WAL records to restore near a chosen time. These
+terms become useful only after you connect them to an observable transaction or
+recovery experiment.
 
 ### Guided work
 

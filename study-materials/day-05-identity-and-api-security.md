@@ -38,6 +38,37 @@ API, a genuine customer can lack an administrator role, and an authorized custom
 can still be forbidden from reading another customer's order. Read each section as
 one independent question in that pipeline.
 
+### Before you start: one person, three decisions
+
+Imagine customer `C-17` asks for order `O-42`. The server must answer three separate
+questions:
+
+1. **Authentication:** who is making the request?
+2. **Action authorization:** may that identity call this operation?
+3. **Object authorization:** does that identity have access to this particular
+   order?
+
+A token helps answer the first question. It does not automatically answer the next
+two.
+
+The security acronyms in this lesson name specific pieces of that flow:
+
+| Term | Meaning in this project |
+| --- | --- |
+| OAuth 2.0 | The authorization framework governing access tokens |
+| OpenID Connect (OIDC) | Identity conventions built on OAuth 2.0 |
+| JSON Web Token (JWT) | One signed token format the API may validate locally |
+| JSON Web Key Set (JWKS) | The issuer's published public verification keys |
+| `iss` | The token claim naming who issued it |
+| `aud` | The token claim naming the intended recipient API |
+| `sub` | The token claim naming the authenticated subject |
+| CORS | A browser policy for cross-origin JavaScript requests |
+| CSRF | An attack that abuses credentials a browser attaches automatically |
+
+Do not try to memorize the acronyms first. Follow one request from untrusted token
+to verified principal to authorized operation. Return to the table whenever a term
+appears.
+
 ## 1. Authentication and authorization are separate decisions
 
 **Authentication** answers: who or what is making this request, and how was that

@@ -33,6 +33,26 @@ Use branch by abstraction: define the existing notification capability, place ol
 and new implementations behind it, mirror or gradually route controlled traffic,
 compare outcomes, and remove the old path only after evidence.
 
+### Start with a concrete situation
+
+Order confirmation currently runs inside the monolith. When the email provider is
+slow, order placement is also slow even though the order can be safely committed
+without an email. That is evidence for separating failure, not merely a desire for
+more services.
+
+Before extraction, write down ownership:
+
+```text
+Ordering owns:     order state and the durable OrderPlaced fact
+Notification owns: templates, preferences, attempts, provider responses
+```
+
+First make the in-process notification path implement a narrow capability. Then add
+the remote consumer behind the same behavioral boundary, feed it durable events,
+and compare outcomes. Stop the new service deliberately: orders should still commit
+while notification backlog becomes visible. That observed independence is the
+benefit the extraction must earn.
+
 ### Guided work
 
 1. Update the context map with ownership, data, calls, events, and team responsibility.
@@ -113,6 +133,29 @@ Inventory must also authenticate the ordering workload and authorize only its
 required operations; network reachability is not trust. Propagate end-user identity
 only when the inventory authorization or audit contract requires it, and never use
 an unverified forwarded header as a principal.
+
+### Start with a concrete situation
+
+Ordering calls Inventory with operation ID `reserve-O-42`. Inventory commits the
+reservation, but the response is lost. Ordering sees a timeout and cannot safely
+guess whether to retry a new reservation, confirm the order, or report failure.
+
+The contract needs operations that answer that uncertainty:
+
+```text
+Reserve(operation ID, items)
+GetReservation(operation ID)
+Release(operation ID)
+```
+
+Repeating `Reserve` with the same operation ID must refer to the same reservation.
+Ordering records pending intent before calling Inventory, then reconciles an
+ambiguous result by querying that identity. This is the first cost of replacing a
+local transaction with a network boundary.
+
+Add deadlines, retries, circuit breakers, and bulkheads only after this correctness
+path is explicit. Those controls bound waiting and pressure; they cannot decide
+whether an ambiguous business effect happened.
 
 ### Guided work
 
@@ -200,6 +243,30 @@ Manual repair is a designed transition with validation, dry-run/preview, audit,
 idempotency, and postcondition verification. Direct database edits are not a repair
 API.
 
+### Start with a concrete situation
+
+An order has durable state `inventory_reservation_requested`. Inventory later sends
+`ReservationSucceeded`, but Ordering crashes before recording `confirmed`. On
+restart, the workflow must know what has happened and what remains to do.
+
+Model each step as a state transition guarded by the current version:
+
+```text
+pending
+  --request reservation--> inventory_reservation_requested
+  --reservation succeeds--> inventory_reserved
+  --confirm order---------> confirmed
+```
+
+Now deliver `ReservationSucceeded` twice. The first transition changes the version;
+the second sees that the state has already advanced and becomes harmless. Deliver
+it after a cancellation timeout and the state machine must choose a documented late
+result rather than executing code in arrival order.
+
+This durable state machine is the saga. Compensation, such as releasing inventory,
+is another command with its own possible timeout and duplicate delivery. It is not
+an automatic rewind.
+
 ### Guided work
 
 1. Define all workflow states, commands, events, timeouts, and valid transitions.
@@ -266,6 +333,25 @@ Deprecation requires owner, replacement, announced date, usage telemetry, consum
 inventory, support window, and removal criteria. Absence of complaints is not proof
 of zero use.
 
+### Start with a concrete situation
+
+A provider adds `"status":"backordered"` to an existing response enum. The JSON
+shape is still valid, so a schema-diff tool may call the change additive. An older
+consumer using an exhaustive switch may crash or reject the response. Structural
+compatibility did not guarantee semantic compatibility.
+
+For every proposed change, test both deployment orders:
+
+```text
+old consumer + new provider
+new consumer + old provider
+```
+
+Use one optional-field change as the safe exercise. Deploy a consumer that tolerates
+the field's absence, then deploy the provider that emits it. Reverse the order in a
+separate rehearsal. Capture the consumer behavior as a contract test so future
+provider changes can verify the real dependency rather than only the schema.
+
 ### Guided work
 
 1. Write HTTP/RPC/event compatibility rules and supported-version policy.
@@ -326,6 +412,32 @@ after observing the trace but needs more infrastructure and bounded buffering.
 Chaos/failure experiments are controlled hypothesis tests with owner, environment,
 blast radius, steady-state measure, injection, abort condition, maximum duration,
 recovery action, and postcheck. They are not random production sabotage.
+
+### Start with a concrete situation
+
+An order appears stuck. Its path crossed the API, ordering service, broker,
+inventory consumer, and notification worker. Five unrelated log searches do not
+show where progress stopped.
+
+Propagated trace and correlation context should reconstruct the logical operation:
+
+```text
+POST /orders trace
+  -> ordering transaction span
+  -> OrderPlaced publish span
+  -> inventory consume span
+  -> reserve call span
+```
+
+Break propagation at the broker deliberately and observe the diagnostic gap. Repair
+it, then inject inventory latency and watch the same trace show retries and queue
+delay. This makes propagation, sampling, and bounded attributes concrete before a
+larger chaos experiment is attempted.
+
+An experiment begins with a prediction: "If Inventory adds 500 ms latency, order
+success remains above X and retry concurrency remains below Y." The abort condition
+protects users; the recovery check proves the system converged after injection
+stopped.
 
 ### Guided work
 
