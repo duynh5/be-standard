@@ -200,8 +200,9 @@ reconciled, and recovery closes the breaker deliberately.
 
 Inventory owns its datastore and contract; no outbound call is unbounded; retry
 ownership and idempotency are explicit; outage/overload produce bounded stable
-errors; dependency telemetry explains attempts and saturation; and healthy recovery
-is demonstrated.
+errors; pending intents and successful remote reservations cannot become invisible
+or orphaned when local confirmation fails; dependency telemetry explains attempts
+and saturation; and healthy recovery is demonstrated.
 
 ## Phase 16: Distributed Workflows and Eventual Consistency
 

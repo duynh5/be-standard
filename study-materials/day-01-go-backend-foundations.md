@@ -53,23 +53,25 @@ store exercise.
 
 ## 1. Modules, packages, files, and names
 
-A **module** is the versioned unit of Go source code. Its root contains `go.mod`,
-which declares the module path and the Go language version. A module contains one
-or more **packages**. A package is a group of `.go` files in the same directory
-that declare the same package name.
+A **module** is a collection of packages released, versioned, and distributed
+together. Its root contains `go.mod`, which declares the module path and the minimum
+Go version required by the module. A package is a group of `.go` files in the same
+directory that declare the same package name.
 
-Initialize this repository from its root:
+This repository is already initialized. Verify the module path from its root:
 
 ```bash
-go mod init be-standard
+go list -m
 ```
 
-For this local learning project, `be-standard` is a sufficient module path. If the
-repository is later published, it can use its canonical repository path.
+The output is `be-standard`. In a new empty project, `go mod init be-standard`
+would create that module declaration; rerunning it here fails because `go.mod`
+already exists. If the repository is later published, it can use its canonical
+repository path.
 
 Create application packages below `internal/`. Go's `internal` rule prevents code
-outside the parent module tree from importing them. That makes the intended API
-boundary explicit without a framework.
+outside the directory tree rooted at the parent of `internal/` from importing them.
+That makes the intended API boundary explicit without a framework.
 
 ```text
 internal/
@@ -78,7 +80,7 @@ internal/
     `-- store_test.go
 ```
 
-Every Go file begins with a package declaration:
+Every Go source file declares a package near the top:
 
 ```go
 package product
@@ -101,20 +103,20 @@ package product
 import "strings"
 
 type Product struct { // Exported type: another package can write product.Product.
-    SKU  string       // Exported field: another package can read and set it.
-    name string       // Unexported field: only package product can refer to it.
+	SKU  string // Exported field: another package can read and set it.
+	name string // Unexported field: only package product can refer to it.
 }
 
 func New(sku, name string) Product { // Exported function.
-    return Product{SKU: sku, name: name}
+	return Product{SKU: sku, name: name}
 }
 
 func (p Product) Name() string { // Exported method.
-    return p.name
+	return p.name
 }
 
 func normalizeSKU(sku string) string { // Unexported helper.
-    return strings.ToUpper(strings.TrimSpace(sku))
+	return strings.ToUpper(strings.TrimSpace(sku))
 }
 ```
 
@@ -125,7 +127,7 @@ Another file in the same directory, such as `internal/product/store.go`, also sa
 package product
 
 func displayName(p Product) string {
-    return p.name + " (" + normalizeSKU(p.SKU) + ")" // Both are accessible here.
+	return p.name + " (" + normalizeSKU(p.SKU) + ")" // Both are accessible here.
 }
 ```
 
@@ -136,19 +138,19 @@ package:
 package main
 
 import (
-    "fmt"
+	"fmt"
 
-    "be-standard/internal/product"
+	"be-standard/internal/product"
 )
 
 func main() {
-    tea := product.New("tea-001", "Green tea")
+	tea := product.New("tea-001", "Green tea")
 
-    fmt.Println(tea.SKU)    // Allowed: SKU is exported.
-    fmt.Println(tea.Name()) // Allowed: Name is exported.
+	fmt.Println(tea.SKU)    // Allowed: SKU is exported.
+	fmt.Println(tea.Name()) // Allowed: Name is exported.
 
-    // fmt.Println(tea.name)          // Does not compile: name is unexported.
-    // product.normalizeSKU(tea.SKU)  // Does not compile: normalizeSKU is unexported.
+	// fmt.Println(tea.name)          // Does not compile: name is unexported.
+	// product.normalizeSKU(tea.SKU)  // Does not compile: normalizeSKU is unexported.
 }
 ```
 
@@ -1132,7 +1134,6 @@ func TestStoreConcurrentCreateAndGet(t *testing.T) {
     wg.Add(workers)
 
     for i := 0; i < workers; i++ {
-        i := i
         go func() {
             defer wg.Done()
 
@@ -1158,7 +1159,9 @@ func TestStoreConcurrentCreateAndGet(t *testing.T) {
 
 The number of goroutines is explicitly bounded. Every goroutine executes
 `wg.Done()` with `defer`, including early-return paths, so the test has a clear
-termination condition.
+termination condition. Because this module requires Go 1.26, `i` is a distinct
+variable on every loop iteration. The old pre-Go-1.22 `i := i` workaround is not
+needed.
 
 Now run the race detector:
 

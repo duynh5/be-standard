@@ -12,7 +12,7 @@ is shared, and how failure moves through a program.
 
 By the end of this lesson, you should be able to:
 
-- read the structure of a Go program and use the standard toolchain;
+- distinguish modules, packages, and files, and use the standard toolchain;
 - declare values and choose useful types;
 - write branches, loops, functions, and closures;
 - explain how arrays, slices, maps, strings, bytes, and runes differ;
@@ -28,10 +28,12 @@ This lesson uses a small product catalog throughout. Type the examples into a
 scratch package if you want maximum recall. Reading creates familiarity; typing,
 predicting, and running create fluency.
 
-## 1. The shape of a Go program
+## 1. Modules, packages, and the shape of a Go program
 
-Every `.go` file starts with a package declaration. An executable program uses
-`package main` and has a `main` function:
+Every Go source file declares a package near the top. A **package** is Go's basic
+compilation and API unit: it is normally the `.go` files in one directory that
+declare the same package name. An executable program uses `package main` and has a
+`main` function:
 
 ```go
 package main
@@ -58,7 +60,32 @@ Go organizes code by package directory, not by class. All ordinary `.go` files i
 one directory must use the same package name. Tests may use that package or an
 external test package ending in `_test`.
 
-Useful commands from this repository's module root are:
+A **module** is a collection of packages released, versioned, and distributed
+together. The Go toolchain also uses modules to manage dependencies. A module's
+root contains a `go.mod` file. This repository's `go.mod` begins with:
+
+```text
+module be-standard
+
+go 1.26.3
+```
+
+The module path is therefore `be-standard`. The files in `internal/product/` form
+the `product` package, whose import path is `be-standard/internal/product`.
+Packages inside a module do not each need their own `go.mod` file.
+
+So the distinction is:
+
+- a module is a collection and dependency/versioning boundary, identified by
+  `go.mod`;
+- a package is a directory-level compilation and visibility boundary that code
+  imports and uses.
+
+One module commonly contains many packages. A repository can also contain more
+than one module, although this repository currently contains one.
+
+Useful commands from this repository's module root, the directory containing
+`go.mod`, are:
 
 ```text
 go run ./path/to/main-package

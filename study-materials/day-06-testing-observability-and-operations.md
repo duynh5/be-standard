@@ -367,8 +367,11 @@ During shutdown:
 6. Close pools and telemetry exporters.
 7. Exit; do not hang forever.
 
-Test both success and deadline exhaustion. A request that ignores context can prevent
-clean drain, so cancellation must reach every blocking database and network call.
+Test both success and deadline exhaustion. `http.Server.Shutdown` waits for active
+handlers but does not cancel their request contexts. Client cancellation and any
+explicit application shutdown signal must therefore reach every blocking database
+and network call; after the drain deadline, use the service's documented forced-
+termination policy.
 
 During a database outage, the intended signals are deliberately different:
 

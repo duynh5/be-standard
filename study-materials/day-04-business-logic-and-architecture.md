@@ -334,6 +334,11 @@ Constructor parameters make requirements visible and enable deterministic tests.
 No dependency-injection framework or service locator is needed. `main` creates the
 real PostgreSQL adapter, system clock, ID generator, service, and handler.
 
+The comparisons above reject nil interface values. An interface containing a typed
+nil pointer is itself non-nil, so the composition root must not pass typed-nil
+implementations. Constructor validation does not make an invalid implementation
+safe.
+
 The construction direction and runtime call direction are related but distinct:
 
 ```text

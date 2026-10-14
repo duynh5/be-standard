@@ -140,7 +140,8 @@ same intended effect as sending it once. It does not require identical response
 codes or timestamps.
 
 `POST /v1/orders` is not naturally idempotent: repeating it could create two
-orders. Day 6 of the implementation roadmap later adds an idempotency-key contract.
+orders. Phase 6 of the implementation roadmap later adds an idempotency-key
+contract.
 
 Imagine a client sends a request and loses the response:
 
@@ -493,9 +494,10 @@ t4  owned database/client resources close; process exits
 ```
 
 If the handler is still running at the shutdown deadline, `Shutdown` returns an
-error and the process needs an explicit policy for forced termination. The deadline
-must fit inside the deployment platform's termination window, leaving time for
-cleanup after draining.
+error; it does not cancel active handler contexts or close their connections. The
+process therefore needs an explicit policy for canceling application work and, if
+necessary, forcing connection termination. The deadline must fit inside the
+deployment platform's termination window, leaving time for cleanup after draining.
 
 Request contexts are canceled when clients disconnect, requests are canceled by
 HTTP/2, or the server stops the connection. Pass `r.Context()` into blocking use

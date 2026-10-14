@@ -84,7 +84,7 @@ A multi-stage build compiles with the Go toolchain and copies only the runtime
 artifact into the final image:
 
 ```dockerfile
-FROM golang:1.26.3-bookworm AS build
+FROM golang:1.26.9-bookworm AS build
 
 WORKDIR /src
 COPY go.mod go.sum ./

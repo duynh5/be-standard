@@ -61,7 +61,8 @@ feature mistakes.
 
 ### Guided work
 
-1. Initialize the module and `cmd/api` command.
+1. Verify the existing module declaration and add the `cmd/api` command. Use
+   `go mod init` only when starting outside this already-initialized repository.
 2. Define typed config with explicit required fields and safe defaults.
 3. Add a minimal server with explicit timeouts and signal handling.
 4. Implement bounded shutdown and distinguish normal `http.ErrServerClosed` from
@@ -112,8 +113,9 @@ recovery so it observes the final recovered status. Authentication will later ru
 inside recovery. Use route templates in logs and metrics, never raw ID-bearing paths.
 
 Liveness checks only process life. Readiness checks whether the instance should
-receive traffic and uses bounded dependency probes. Both endpoints must have stable
-semantics documented in OpenAPI.
+receive traffic. In this phase it reflects application lifecycle, such as startup
+completion and draining; Phase 3 adds a bounded PostgreSQL probe after that
+dependency exists. Both endpoints must have stable semantics documented in OpenAPI.
 
 ### Start with a concrete situation
 
@@ -151,7 +153,8 @@ instead of remaining architectural claims.
 3. Build strict JSON decoding with media-type parsing and byte limits.
 4. Add request-ID validation/generation, access logging, and panic recovery.
 5. Compose middleware as request ID -> access log -> recovery -> route.
-6. Add live and ready handlers with distinct dependency behavior.
+6. Add live and ready handlers with distinct lifecycle behavior; leave PostgreSQL
+   readiness probing for Phase 3.
 7. Configure server header, read, write, idle, and shutdown timeouts.
 8. Test handlers with `httptest`; do not bind a port for unit-level HTTP tests.
 9. Compare actual examples with the OpenAPI contract.
@@ -160,8 +163,8 @@ instead of remaining architectural claims.
 
 Send wrong content type, malformed JSON, unknown fields, trailing JSON, an oversized
 body, and a panic. Confirm deterministic 4xx outcomes, one generic 500, correlation
-in logs, and no internal error text. Make PostgreSQL unavailable: readiness should
-fail promptly while liveness remains healthy.
+in logs, and no internal error text. Put the application into its draining state:
+readiness should fail promptly while liveness remains healthy.
 
 ### Knowledge check and expected answers
 
@@ -224,14 +227,16 @@ performance setting.
 
 1. Add a pinned local PostgreSQL service and health check.
 2. Configure pgx pool limits, lifetimes, and startup ping deadline.
-3. Add Goose migration commands and the initial product schema.
-4. Encode SKU uniqueness, nonnegative price/inventory, required fields, and times.
-5. Implement product insert/get/list with parameterized SQL.
-6. Translate no-row and specific unique-constraint outcomes.
-7. Build an integration harness that starts from migrated disposable state.
-8. Test direct invalid SQL writes to prove constraints.
-9. Test cancellation during pool wait or query execution.
-10. Run empty-database migration verification in CI.
+3. Extend readiness with a tightly bounded PostgreSQL acquisition and ping check;
+   keep liveness independent of PostgreSQL.
+4. Add Goose migration commands and the initial product schema.
+5. Encode SKU uniqueness, nonnegative price/inventory, required fields, and times.
+6. Implement product insert/get/list with parameterized SQL.
+7. Translate no-row and specific unique-constraint outcomes.
+8. Build an integration harness that starts from migrated disposable state.
+9. Test direct invalid SQL writes to prove constraints.
+10. Test cancellation during pool wait or query execution.
+11. Run empty-database migration verification in CI.
 
 ### Failure checks
 
