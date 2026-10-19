@@ -1,9 +1,9 @@
-# Phases 14-18: Service Extraction and Distributed Delivery
+# Service Extraction and Distributed Delivery
 
-Extraction starts only after the earlier phases provide data, failure, and operational
+Extraction starts only after the earlier work provides data, failure, and operational
 evidence. Each service owns its contract, data, runtime, deployment, and on-call cost.
 
-## Phase 14: Service-Boundary Discovery and First Extraction
+## Service-Boundary Discovery and First Extraction
 
 ### Goal and mental model
 
@@ -89,7 +89,7 @@ The ADR cites real coupling data; notification deploys/fails independently; orde
 placement survives its outage; no cross-data access exists; incremental migration
 and rollback are rehearsed; and benefits plus ongoing operational costs are measured.
 
-## Phase 15: Synchronous Service Communication and the System Edge
+## Synchronous Service Communication and the System Edge
 
 ### Goal and mental model
 
@@ -116,8 +116,8 @@ order intent in a pending state with a stable reservation operation ID. Confirm 
 after inventory reports that exact reservation. If reservation succeeds but local
 confirmation fails, or if the response is ambiguous, durable reconciliation must
 query by operation ID and either confirm or issue an idempotent release. Do not create
-an uncorrelated second reservation or report the order confirmed prematurely. Phase
-16 expands this minimum safe bridge into the complete durable saga state machine.
+an uncorrelated second reservation or report the order confirmed prematurely. The
+distributed-workflows section expands this minimum safe bridge into the complete durable saga state machine.
 
 Protect dependencies with distinct tools:
 
@@ -204,7 +204,7 @@ errors; pending intents and successful remote reservations cannot become invisib
 or orphaned when local confirmation fails; dependency telemetry explains attempts
 and saturation; and healthy recovery is demonstrated.
 
-## Phase 16: Distributed Workflows and Eventual Consistency
+## Distributed Workflows and Eventual Consistency
 
 ### Goal and mental model
 
@@ -304,7 +304,7 @@ order events preserve invariants; compensation is idempotent and distinguishable
 timeouts are durable; stuck work is alerted and repairable; and temporary consistency
 bounds are measured.
 
-## Phase 17: Contract Evolution and Independent Delivery
+## Contract Evolution and Independent Delivery
 
 ### Goal and mental model
 
@@ -389,7 +389,7 @@ Contracts and policies are published; CI blocks demonstrated schema and semantic
 breaks; both deployment orders work for a compatible change; delayed old events are
 handled; deprecation identifies consumers; and removal follows telemetry evidence.
 
-## Phase 18: Distributed Observability and Resilience Validation
+## Distributed Observability and Resilience Validation
 
 ### Goal and mental model
 

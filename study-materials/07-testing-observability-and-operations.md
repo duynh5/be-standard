@@ -1,7 +1,7 @@
-# Day 6: Testing, Observability, and Operations
+# Testing, Observability, and Operations
 
-This lesson expands Day 6 of the
-[backend learning roadmap](../BACKEND_LEARNING_ROADMAP.md#day-6-tests-observability-and-operations).
+This chapter expands the operability competency module in the
+[overview and competency map](00-overview-and-competency-map.md#tests-observability-and-operations).
 It turns correctness and operability claims into repeatable evidence.
 
 ## Learning outcomes
@@ -590,7 +590,7 @@ configuration outside business packages.
 
 ## 15. Completion evidence
 
-Day 6 is complete when:
+This chapter is complete when:
 
 - each important risk is covered at the narrowest boundary that can prove it;
 - tests do not depend on arbitrary sleeps, wall time, or random identifiers;
@@ -603,4 +603,5 @@ Day 6 is complete when:
 - one SLO alert leads to a usable runbook;
 - all configured code, integration, race, vet, and vulnerability checks pass.
 
-Then continue to Day 7.
+Then continue to
+[Delivery and production readiness](08-delivery-and-production-readiness.md).

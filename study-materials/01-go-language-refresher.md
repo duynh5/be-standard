@@ -756,7 +756,7 @@ if errors.As(err, &productErr) {
 
 The deeper backend treatment, including custom matching and Go 1.26's
 `errors.AsType`, is in
-[Day 1: Go backend foundations](../day-01-go-backend-foundations.md#5-errors-are-values-with-identity).
+[Go backend foundations](02-go-backend-foundations.md#5-errors-are-values-with-identity).
 
 ### `defer` schedules cleanup at the owner boundary
 
@@ -884,7 +884,7 @@ The mutex protects an invariant, not merely a map operation. If “check stock a
 reserve it” must be atomic, both steps belong under one lock. Always decide how a
 goroutine ends before starting it; leaked goroutines are leaked resources.
 
-[Day 1](../day-01-go-backend-foundations.md#8-concurrency-goroutines-synchronization-and-correctness)
+[Go backend foundations](02-go-backend-foundations.md#8-concurrency-goroutines-synchronization-and-correctness)
 develops these rules through a concurrency-safe store exercise.
 
 ## 13. Testing and everyday tools
@@ -1079,6 +1079,6 @@ Answer before opening the explanations below:
 
 ## Where to continue
 
-Continue with [Day 1: Go backend foundations](../day-01-go-backend-foundations.md).
+Continue with [Go backend foundations](02-go-backend-foundations.md).
 That lesson applies these language mechanics to boundary design, resource ownership,
 error contracts, cancellation, concurrency, and a tested in-memory backend store.

@@ -1,9 +1,9 @@
-# Phases 11-13: Durable and Distributed Foundations
+# Durable and Distributed Foundations
 
-These phases introduce asynchronous work and partial failure while the production
+These lessons introduce asynchronous work and partial failure while the production
 architecture still relies on maintained databases, brokers, and coordination tools.
 
-## Phase 11: Durable Background Jobs and Scheduling
+## Durable Background Jobs and Scheduling
 
 ### Goal and mental model
 
@@ -102,7 +102,7 @@ reaches a bounded dead-letter state; two schedulers cause no unsafe duplicate ef
 backlog and oldest age are observable; operator replay is scoped/audited; and shutdown
 finishes or releases leases within its deadline.
 
-## Phase 12: Reliable Event Publication and Consumption
+## Reliable Event Publication and Consumption
 
 ### Goal and mental model
 
@@ -204,7 +204,7 @@ range replay converges to the same state; producer/consumer deployment order wor
 for a compatible change; contracts state ordering and ownership; and lag,
 redelivery, oldest age, and dead letters are actionable.
 
-## Phase 13: Distributed-Systems Mechanics Lab
+## Distributed-Systems Mechanics Lab
 
 ### Goal and mental model
 

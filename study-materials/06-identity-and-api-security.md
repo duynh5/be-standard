@@ -1,7 +1,7 @@
-# Day 5: Identity and API Security
+# Identity and API Security
 
-This lesson expands Day 5 of the
-[backend learning roadmap](../BACKEND_LEARNING_ROADMAP.md#day-5-identity-and-api-security).
+This chapter expands the security competency module in the
+[overview and competency map](00-overview-and-competency-map.md#identity-and-api-security).
 It treats the API as an OAuth 2.0 resource server: an external identity provider
 issues access tokens, while this service verifies them and enforces authorization.
 
@@ -569,7 +569,7 @@ and distract from learning resource-server responsibilities.
 
 ## 15. Completion evidence
 
-Day 5 is complete when:
+This chapter is complete when:
 
 - token validation requires trusted algorithm, signature, issuer, audience, time,
   and subject claims;
@@ -582,4 +582,5 @@ Day 5 is complete when:
 - the threat model maps every listed threat to implementation evidence;
 - formatting, tests, race checks, vet, and vulnerability checks pass.
 
-Then continue to Day 6.
+Then continue to
+[Testing, observability, and operations](07-testing-observability-and-operations.md).

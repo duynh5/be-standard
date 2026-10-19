@@ -1,7 +1,7 @@
-# Day 7: Delivery and Production Rehearsal
+# Delivery and Production Readiness
 
-This lesson expands Day 7 of the
-[backend learning roadmap](../BACKEND_LEARNING_ROADMAP.md#day-7-delivery-and-production-rehearsal).
+This chapter expands the delivery competency module in the
+[overview and competency map](00-overview-and-competency-map.md#delivery-and-production-readiness).
 It packages the service into one reproducible artifact and rehearses operating it
 under failure.
 
@@ -525,7 +525,7 @@ perform either a rehearsed rollback or roll-forward. Record artifact digest, sch
 version, timings, and verification evidence.
 
 Do not introduce Kubernetes merely to complete this stretch goal. Use the simplest
-available non-production platform; orchestration is a later phase.
+available non-production platform; orchestration is covered in a later chapter.
 
 ## 14. Knowledge check
 
@@ -558,7 +558,7 @@ available non-production platform; orchestration is a later phase.
 
 ## 15. Completion evidence
 
-Day 7 is complete when:
+This chapter is complete when:
 
 - the image contains the runtime binary without source, toolchain, or credentials
   and runs as non-root;
@@ -575,5 +575,6 @@ Day 7 is complete when:
 - another developer completes the documented clean-clone workflow without hidden
   steps.
 
-The seven-day readiness track is then complete. Continue with Phase 0 of the longer
-implementation roadmap, using the phase refresher before each new deliverable.
+The core competency modules are then complete. Continue with
+[Domain discovery and modeling](09-domain-discovery.md), using the key-concept
+review when a later topic needs refreshing.

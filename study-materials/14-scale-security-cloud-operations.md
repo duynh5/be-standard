@@ -1,9 +1,9 @@
-# Phases 19-23: Scale, Security, Cloud, and Operations
+# Scale, Security, Cloud, and Operations
 
-These phases address growth and production operation without treating scale as a
+These lessons address growth and production operation without treating scale as a
 reason to weaken correctness, tenant isolation, or ownership.
 
-## Phase 19: Data Scaling, Caching, and Multi-Tenancy
+## Data Scaling, Caching, and Multi-Tenancy
 
 ### Goal and mental model
 
@@ -108,7 +108,7 @@ measured and routed by operation; partition/archive changes have plans and rollb
 cross-tenant tests cover APIs, jobs, events, cache, and operator tools; and noisy-
 neighbor quotas protect other tenants.
 
-## Phase 20: Security, Privacy, and Software Supply Chain
+## Security, Privacy, and Software Supply Chain
 
 ### Goal and mental model
 
@@ -206,7 +206,7 @@ and revokes old access; every sensitive field has purpose/owner/retention/export
 deletion treatment; deletion/export workflows reconcile all locations; signed
 artifacts are verified; and the vulnerability drill completes through normal release.
 
-## Phase 21: Cloud Infrastructure and IAM
+## Cloud Infrastructure and IAM
 
 ### Goal and mental model
 
@@ -297,7 +297,7 @@ workloads have tested least privilege; identity rotation is outage-free; network
 denials are diagnosable; audit and budgets operate; cost is estimated; and scoped
 teardown removes only intended resources.
 
-## Phase 22: Orchestration and Platform Operations
+## Orchestration and Platform Operations
 
 ### Goal and mental model
 
@@ -356,7 +356,7 @@ application contracts.
 1. Deploy to a local or isolated non-production Kubernetes environment.
 2. Add small reviewed manifests/templates for workloads, Services, ingress,
    configuration, secret references, and network policies.
-3. Set resource requests/limits from Phase 9 evidence.
+3. Set resource requests/limits from the earlier performance evidence.
 4. Configure startup, readiness, liveness, and termination grace coherently.
 5. Add rollout surge/unavailable limits and a disruption budget.
 6. Configure autoscaling from relevant saturation while capping fleet database use.
@@ -389,7 +389,7 @@ termination match predictions; network policy enforces ownership; autoscaling us
 relevant signal without exceeding dependency budgets; bootstrap/teardown are
 reproducible; and application teams can diagnose common failures with limited access.
 
-## Phase 23: Reliability Engineering, Incidents, and Cost
+## Reliability Engineering, Incidents, and Cost
 
 ### Goal and mental model
 

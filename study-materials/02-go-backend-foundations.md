@@ -1,13 +1,13 @@
-# Day 1: Go Backend Foundations
+# Go Backend Foundations
 
-This lesson is the detailed companion to Day 1 of the
-[backend learning roadmap](../BACKEND_LEARNING_ROADMAP.md#day-1-go-as-a-backend-language).
+This chapter expands the Go competency module in the
+[overview and competency map](00-overview-and-competency-map.md#go-as-a-backend-language).
 It is self-contained: you can complete the required lesson without searching for
 another tutorial. External references are optional sources for deeper study.
 
 If basic Go syntax is rusty, complete the optional
-[Go language refresher](foundations/go-language-refresher.md) first. It teaches the
-syntax and core value semantics as a connected lesson; this Day 1 lesson then
+[Go language refresher](01-go-language-refresher.md) first. It teaches the
+syntax and core value semantics as a connected lesson; this chapter then
 applies them to backend boundaries, resource ownership, cancellation, and
 concurrency.
 
@@ -1012,7 +1012,7 @@ if store.Quantity(sku) > 0 {
 Each call may be individually race-free, but two callers can both observe quantity
 `1`, then both decrement. The business operation requires one atomic check-and-
 decrement operation. Synchronize the whole invariant, not merely individual field
-accesses. Day 3 applies the same principle with database transactions and locks.
+accesses. The PostgreSQL chapter applies the same principle with database transactions and locks.
 
 Compare the two guarantees:
 
@@ -1061,7 +1061,7 @@ Required invariants:
    collection.
 6. `List` uses a deterministic order so tests and later API behavior are stable.
 
-For Day 1, order the list lexicographically by SKU using `sort.Slice` or
+For this exercise, order the list lexicographically by SKU using `sort.Slice` or
 `slices.SortFunc`. Stable order matters because map iteration order is deliberately
 unspecified.
 
@@ -1192,7 +1192,7 @@ invariant remains true under contention.
 
 ### Step 5: complete the verification loop
 
-Run the repository's Day 1 checks:
+Run this chapter's checks:
 
 ```bash
 gofmt -w .
@@ -1271,7 +1271,7 @@ Answer these without looking back:
 
 ## 12. Completion evidence
 
-Day 1 is complete when all of the following are true:
+This chapter is complete when all of the following are true:
 
 - the four verification commands pass;
 - the duplicate-SKU contention test proves exactly one success;
@@ -1283,6 +1283,7 @@ Day 1 is complete when all of the following are true:
 - you record one mistake, why it occurred, and the test or design rule that now
   prevents it.
 
-Then continue to Day 2. Do not add HTTP handlers during this lesson; keeping the
+Then continue to [HTTP contracts and service lifecycle](03-http-contracts-and-service-lifecycle.md).
+Do not add HTTP handlers during this lesson; keeping the
 exercise in memory makes the language, ownership, errors, and concurrency behavior
 easier to see.

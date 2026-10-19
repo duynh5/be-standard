@@ -1,7 +1,7 @@
-# Day 3: PostgreSQL and Relational Data
+# PostgreSQL and Relational Data
 
-This lesson expands Day 3 of the
-[backend learning roadmap](../BACKEND_LEARNING_ROADMAP.md#day-3-relational-data-and-postgresql).
+This chapter expands the relational-data competency module in the
+[overview and competency map](00-overview-and-competency-map.md#relational-data-and-postgresql).
 It explains the required relational and transaction concepts and guides the first
 PostgreSQL-backed implementation.
 
@@ -618,7 +618,7 @@ should not expose database addresses or error strings publicly.
 
 ## 15. Completion evidence
 
-Day 3 is complete when:
+This chapter is complete when:
 
 - an empty disposable database reaches the full schema through migrations alone;
 - direct SQL cannot insert duplicate SKU, negative inventory, or an orphan item;
@@ -630,4 +630,4 @@ Day 3 is complete when:
 - formatting, unit tests, integration tests, race checks, and vet pass.
 
 Record the observed failure mode and the database rule that prevents it. Then move
-to Day 4.
+to [Business logic and architecture](05-business-logic-and-architecture.md).

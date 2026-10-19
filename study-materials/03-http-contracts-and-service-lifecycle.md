@@ -1,8 +1,8 @@
-# Day 2: HTTP Contracts and Request Lifecycle
+# HTTP Contracts and Service Lifecycle
 
-This lesson expands Day 2 of the
-[backend learning roadmap](../BACKEND_LEARNING_ROADMAP.md#day-2-http-contracts-and-request-lifecycle).
-It assumes the Day 1 in-memory product store exists. External references are
+This chapter expands the HTTP competency module in the
+[overview and competency map](00-overview-and-competency-map.md#http-contracts-and-request-lifecycle).
+It assumes the in-memory product store from the previous chapter exists. External references are
 optional; everything required for this lesson is explained here.
 
 ## Learning outcomes
@@ -140,7 +140,7 @@ same intended effect as sending it once. It does not require identical response
 codes or timestamps.
 
 `POST /v1/orders` is not naturally idempotent: repeating it could create two
-orders. Phase 6 of the implementation roadmap later adds an idempotency-key
+orders. The production-service chapter later adds an idempotency-key
 contract.
 
 Imagine a client sends a request and loses the response:
@@ -462,7 +462,7 @@ query PostgreSQL or another dependency. If a database outage makes liveness fail
 an orchestrator may restart healthy application processes repeatedly without fixing
 the database.
 
-Readiness is added with the database on Day 3. It answers whether this instance
+Readiness is added with the database in the PostgreSQL chapter. It answers whether this instance
 should receive traffic and may use a tightly bounded dependency check.
 
 For graceful shutdown:
@@ -520,7 +520,7 @@ internal/product/
 Complete the work in this order:
 
 1. Add `GET /health/live` returning 200 and a small JSON body.
-2. Add `GET /v1/products` using the Day 1 store.
+2. Add `GET /v1/products` using the in-memory store from the previous chapter.
 3. Add `POST /v1/products` with strict JSON decoding.
 4. Return 201 plus `Location` for successful creation.
 5. Map duplicate SKU to a stable 409 problem.
@@ -618,7 +618,7 @@ after the page boundary.
 
 ## 14. Completion evidence
 
-Day 2 is complete when:
+This chapter is complete when:
 
 - handler tests cover the happy path and malformed, oversized, unknown-field,
   duplicate, and panic paths;
@@ -629,4 +629,5 @@ Day 2 is complete when:
 - graceful shutdown has a bounded test or manual demonstration;
 - `gofmt`, `go test`, `go test -race`, and `go vet` pass.
 
-Record one failure and why the final boundary prevents it. Then continue to Day 3.
+Record one failure and why the final boundary prevents it. Then continue to
+[PostgreSQL and relational data](04-postgresql-and-relational-data.md).

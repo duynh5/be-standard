@@ -1,7 +1,7 @@
-# Phase 0: Domain Discovery and Modeling
+# Domain Discovery and Modeling
 
 This lesson expands
-[Phase 0 of the roadmap](../../BACKEND_LEARNING_ROADMAP.md#phase-0-domain-discovery-and-modeling).
+[Domain discovery in the applied progression](00-overview-and-competency-map.md#domain-discovery-and-modeling).
 Complete it before choosing endpoints, tables, packages, or services. The output is
 a shared model of behavior, not application code.
 
@@ -230,7 +230,7 @@ Create a domain-discovery document and complete these steps:
 
 ## 11. Completion evidence
 
-Phase 0 is complete when every initial API use case maps to reviewed examples and
+This chapter is complete when every initial API use case maps to reviewed examples and
 named invariants; at least two conflicting interpretations are explicitly resolved;
 state and context diagrams use only domain language; the decision log separates
 facts from assumptions; and an outside reviewer can explain valid and invalid order

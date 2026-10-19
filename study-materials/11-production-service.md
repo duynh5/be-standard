@@ -1,9 +1,9 @@
-# Phases 6-10: Production Service
+# Production Service
 
 These lessons take the correct order workflow and make it safe to retry, observable,
 deployable, measurable, and recoverable.
 
-## Phase 6: Idempotency and Failure Semantics
+## Idempotency and Failure Semantics
 
 ### Goal and mental model
 
@@ -100,7 +100,7 @@ Concurrent duplicates create one order; mismatched payloads conflict; disconnect
 retry returns the stored outcome; crash tests cover each transition; record growth
 has a measured retention/cleanup policy; and the client retry contract is explicit.
 
-## Phase 7: Observability and Operational Controls
+## Observability and Operational Controls
 
 ### Goal and mental model
 
@@ -185,7 +185,7 @@ resource pressure; labels are bounded; sensitive-data review passes; alerts cove
 sustained errors, latency, and saturation; and the runbook successfully guides a
 failure drill.
 
-## Phase 8: Deployment Hardening
+## Deployment Hardening
 
 ### Goal and mental model
 
@@ -267,7 +267,7 @@ resource and shutdown limits align; old/new versions coexist through a schema
 change; scanners run on source and artifact; and a restore drill verifies data and
 records measured recovery.
 
-## Phase 9: Performance and Resilience Based on Evidence
+## Performance and Resilience Based on Evidence
 
 ### Goal and mental model
 
@@ -351,7 +351,7 @@ before/after evidence supports each optimization; overload is bounded and recove
 measured; query and pool tuning preserve correctness; and any cache has explicit
 consistency and removal behavior.
 
-## Phase 10: Advanced PostgreSQL Operations and Recovery
+## Advanced PostgreSQL Operations and Recovery
 
 ### Goal and mental model
 

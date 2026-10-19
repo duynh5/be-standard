@@ -1,22 +1,22 @@
-# Backend Implementation Phases: Key-Concept Refresher
+# Backend Engineering Key-Concept Refresher
 
-Use this guide to restore the mental model behind a phase quickly. It is an
+Use this guide to restore the mental model behind a topic quickly. It is an
 **after-learning review guide**, not the first explanation of these subjects. If a
-term is unfamiliar, open the corresponding phase lesson and work through its
+term is unfamiliar, open the corresponding detailed lesson and work through its
 concrete situation before returning here. This guide intentionally does not repeat
-the roadmap's deliverables or acceptance criteria. The
-[backend learning roadmap](../BACKEND_LEARNING_ROADMAP.md) remains authoritative
+the deliverables or acceptance criteria. The
+[overview and competency map](00-overview-and-competency-map.md) remains authoritative
 for what to build and how completion is judged.
 
 ## How to use this refresher actively
 
 Reading condensed bullets can create recognition without understanding. Use this
-four-step loop for one phase at a time:
+four-step loop for one topic at a time:
 
-1. Read only the phase title and memory anchors.
+1. Read only the topic title and memory anchors.
 2. Without looking, explain one concrete success and one concrete failure.
 3. Answer the self-check questions in complete sentences.
-4. Reopen the phase lesson wherever your explanation becomes vague.
+4. Reopen the detailed lesson wherever your explanation becomes vague.
 
 For example, do not merely repeat "timeouts are ambiguous." Construct the event
 sequence:
@@ -33,22 +33,22 @@ operation identity resolves the ambiguity, and how reconciliation discovers the
 final state. If you cannot do that, the concept needs another learning pass rather
 than more memorization.
 
-## How the phases fit together
+## How the topics fit together
 
-| Range | Focus | Question it answers |
+| Area | Focus | Question it answers |
 | --- | --- | --- |
-| Phase 0 | Domain understanding | What problem and rules are we actually implementing? |
-| Phases 1-10 | One production service | Can one service preserve data, fail safely, and be operated? |
-| Phases 11-13 | Asynchrony and distribution | Can work survive restarts, duplication, delay, and partitions? |
-| Phases 14-18 | Service extraction | Can independently deployed services remain compatible and diagnosable? |
-| Phases 19-23 | Scale and operations | Can the system isolate tenants, run securely, and meet reliability goals? |
-| Phases 24-26 | Integration and leadership | Can the system evolve safely and can its decisions be defended? |
+| Domain modeling | Domain understanding | What problem and rules are we actually implementing? |
+| Production service | Service foundations | Can one service preserve data, fail safely, and be operated? |
+| Distributed foundations | Asynchrony and distribution | Can work survive restarts, duplication, delay, and partitions? |
+| Service extraction | Distributed delivery | Can independently deployed services remain compatible and diagnosable? |
+| Scale and operations | Production growth | Can the system isolate tenants, run securely, and meet reliability goals? |
+| Integration and leadership | System evolution | Can the system evolve safely and can its decisions be defended? |
 
 The order matters. Distribution magnifies weak domain models, unsafe data handling, vague contracts, and poor observability. Build those foundations before adding independently deployed service boundaries.
 
-Microservice thinking still starts in Phase 0. In every phase, use the roadmap's [cross-cutting microservice lens](../BACKEND_LEARNING_ROADMAP.md#cross-cutting-microservice-lens) to ask what ownership is emerging, which assumptions would fail across a network, what contract and data access would become public, which operational costs would appear, and what evidence would justify extraction. Before Phase 14 this is a counterfactual design exercise, not a reason to add speculative distributed infrastructure.
+Microservice thinking still starts during domain discovery. In every topic, use the [cross-cutting microservice lens](00-overview-and-competency-map.md#cross-cutting-microservice-lens) to ask what ownership is emerging, which assumptions would fail across a network, what contract and data access would become public, which operational costs would appear, and what evidence would justify extraction. Before the service-extraction chapter this is a counterfactual design exercise, not a reason to add speculative distributed infrastructure.
 
-## Phase 0: Domain discovery and modeling
+## Domain discovery and modeling
 
 ### Core ideas
 
@@ -70,7 +70,7 @@ Microservice thinking still starts in Phase 0. In every phase, use the roadmap's
 - Can I list every valid and invalid transition for an order without referring to HTTP or SQL?
 - Which business rule must remain true during concurrent order placement?
 
-## Phase 1: Decisions and executable skeleton
+## Decisions and executable skeleton
 
 ### Core ideas
 
@@ -92,7 +92,7 @@ Microservice thinking still starts in Phase 0. In every phase, use the roadmap's
 - What happens from `SIGTERM` until process exit?
 - Can every CI failure be reproduced locally with a documented command?
 
-## Phase 2: HTTP platform
+## HTTP platform
 
 ### Core ideas
 
@@ -115,7 +115,7 @@ Microservice thinking still starts in Phase 0. In every phase, use the roadmap's
 - Why must liveness avoid checking the database?
 - Where is an internal error translated into its public status and error code?
 
-## Phase 3: Persistence foundation
+## Persistence foundation
 
 ### Core ideas
 
@@ -138,7 +138,7 @@ Microservice thinking still starts in Phase 0. In every phase, use the roadmap's
 - Which resources must be closed or rolled back after a failed query?
 - Can the complete schema be reproduced from migrations alone?
 
-## Phase 4: Product slice
+## Product slice
 
 ### Core ideas
 
@@ -160,7 +160,7 @@ Microservice thinking still starts in Phase 0. In every phase, use the roadmap's
 - Where is admin authorization enforced and tested?
 - How does a unique-constraint failure become a stable API conflict?
 
-## Phase 5: Order transaction
+## Order transaction
 
 ### Core ideas
 
@@ -182,7 +182,7 @@ Microservice thinking still starts in Phase 0. In every phase, use the roadmap's
 - Which failures cause rollback, and who owns that rollback?
 - Why should wrong-owner and nonexistent-order reads look the same externally?
 
-## Phase 6: Idempotency and failure semantics
+## Idempotency and failure semantics
 
 ### Core ideas
 
@@ -204,7 +204,7 @@ Microservice thinking still starts in Phase 0. In every phase, use the roadmap's
 - What happens if the process dies after the order commits but before the response is sent?
 - When may an idempotency record be deleted safely?
 
-## Phase 7: Observability and operational controls
+## Observability and operational controls
 
 ### Core ideas
 
@@ -227,7 +227,7 @@ Microservice thinking still starts in Phase 0. In every phase, use the roadmap's
 - Which labels are bounded, and which could grow without limit?
 - What precise operator action follows each page?
 
-## Phase 8: Deployment hardening
+## Deployment hardening
 
 ### Core ideas
 
@@ -250,7 +250,7 @@ Microservice thinking still starts in Phase 0. In every phase, use the roadmap's
 - What happens to an in-flight request when the platform terminates a container?
 - When was the last restore tested and what was verified afterward?
 
-## Phase 9: Performance and resilience based on evidence
+## Performance and resilience based on evidence
 
 ### Core ideas
 
@@ -273,7 +273,7 @@ Microservice thinking still starts in Phase 0. In every phase, use the roadmap's
 - Which profile proves the suspected bottleneck?
 - How does the service behave just beyond capacity?
 
-## Phase 10: Advanced PostgreSQL operations and recovery
+## Advanced PostgreSQL operations and recovery
 
 ### Core ideas
 
@@ -296,7 +296,7 @@ Microservice thinking still starts in Phase 0. In every phase, use the roadmap's
 - How does an interrupted backfill resume without skipping or duplicating work?
 - What measured evidence supports the stated RPO and RTO?
 
-## Phase 11: Durable background jobs and scheduling
+## Durable background jobs and scheduling
 
 ### Core ideas
 
@@ -319,7 +319,7 @@ Microservice thinking still starts in Phase 0. In every phase, use the roadmap's
 - Which errors retry, which fail permanently, and which go to quarantine?
 - Can two scheduler replicas trigger the cleanup safely?
 
-## Phase 12: Reliable event publication and consumption
+## Reliable event publication and consumption
 
 ### Core ideas
 
@@ -342,7 +342,7 @@ Microservice thinking still starts in Phase 0. In every phase, use the roadmap's
 - Which key defines ordering for `OrderPlaced` events?
 - Can replay rebuild the same final state without repeating an external side effect?
 
-## Phase 13: Distributed-systems mechanics lab
+## Distributed-systems mechanics lab
 
 ### Core ideas
 
@@ -365,7 +365,7 @@ Microservice thinking still starts in Phase 0. In every phase, use the roadmap's
 - How does a protected resource recognize a stale lease holder?
 - What reconciliation rule runs after partition healing?
 
-## Phase 14: Service-boundary discovery and first extraction
+## Service-boundary discovery and first extraction
 
 ### Core ideas
 
@@ -387,7 +387,7 @@ Microservice thinking still starts in Phase 0. In every phase, use the roadmap's
 - Can the extracted service fail without blocking order placement?
 - Which operational costs increased after the split?
 
-## Phase 15: Synchronous service communication and the system edge
+## Synchronous service communication and the system edge
 
 ### Core ideas
 
@@ -410,7 +410,7 @@ Microservice thinking still starts in Phase 0. In every phase, use the roadmap's
 - Which single layer retries, and how is retry multiplication prevented?
 - What response does the caller receive when inventory is unavailable?
 
-## Phase 16: Distributed workflows and eventual consistency
+## Distributed workflows and eventual consistency
 
 ### Core ideas
 
@@ -433,7 +433,7 @@ Microservice thinking still starts in Phase 0. In every phase, use the roadmap's
 - What happens when confirmation arrives after cancellation?
 - Which repair actions require human judgment and an audit trail?
 
-## Phase 17: Contract evolution and independent delivery
+## Contract evolution and independent delivery
 
 ### Core ideas
 
@@ -456,7 +456,7 @@ Microservice thinking still starts in Phase 0. In every phase, use the roadmap's
 - Which seemingly additive change could still alter existing behavior?
 - What evidence proves a deprecated contract has no remaining callers?
 
-## Phase 18: Distributed observability and resilience validation
+## Distributed observability and resilience validation
 
 ### Core ideas
 
@@ -479,7 +479,7 @@ Microservice thinking still starts in Phase 0. In every phase, use the roadmap's
 - Which telemetry distinguishes an originating failure from cascading symptoms?
 - What automatically stops a fault experiment if impact exceeds its boundary?
 
-## Phase 19: Data scaling, caching, and multi-tenancy
+## Data scaling, caching, and multi-tenancy
 
 ### Core ideas
 
@@ -502,7 +502,7 @@ Microservice thinking still starts in Phase 0. In every phase, use the roadmap's
 - Can a tenant identifier be omitted or forged in any worker, cache key, or query?
 - How is a corrupted search index rebuilt completely?
 
-## Phase 20: Security, privacy, and software supply chain
+## Security, privacy, and software supply chain
 
 ### Core ideas
 
@@ -525,7 +525,7 @@ Microservice thinking still starts in Phase 0. In every phase, use the roadmap's
 - Where does each sensitive field flow and when is it deleted?
 - Can a vulnerable artifact be identified, rebuilt, verified, and replaced quickly?
 
-## Phase 21: Cloud infrastructure and IAM
+## Cloud infrastructure and IAM
 
 ### Core ideas
 
@@ -548,7 +548,7 @@ Microservice thinking still starts in Phase 0. In every phase, use the roadmap's
 - Which exact resources can each workload identity access?
 - Can the environment be recreated and safely removed from version-controlled definitions?
 
-## Phase 22: Orchestration and platform operations
+## Orchestration and platform operations
 
 ### Core ideas
 
@@ -571,7 +571,7 @@ Microservice thinking still starts in Phase 0. In every phase, use the roadmap's
 - Can a rollout preserve capacity while old and new contracts coexist?
 - Which signal scales workers without overwhelming their dependency?
 
-## Phase 23: Reliability engineering, incidents, and cost
+## Reliability engineering, incidents, and cost
 
 ### Core ideas
 
@@ -594,7 +594,7 @@ Microservice thinking still starts in Phase 0. In every phase, use the roadmap's
 - What is the first saturated dependency at forecast traffic plus headroom?
 - Could an on-call engineer act on every page without additional context?
 
-## Phase 24: Common production integration boundaries
+## Common production integration boundaries
 
 ### Core ideas
 
@@ -617,7 +617,7 @@ Microservice thinking still starts in Phase 0. In every phase, use the roadmap's
 - How are forged, replayed, duplicated, and reordered webhooks handled?
 - Can a derived view be deleted and rebuilt without losing authoritative data?
 
-## Phase 25: Maintenance and legacy-system evolution
+## Maintenance and legacy-system evolution
 
 ### Core ideas
 
@@ -640,7 +640,7 @@ Microservice thinking still starts in Phase 0. In every phase, use the roadmap's
 - Can the rollout be stopped or reversed after partial exposure?
 - How does a repair command prove it cannot cross its declared scope?
 
-## Phase 26: Capstone delivery and engineering leadership
+## Capstone delivery and engineering leadership
 
 ### Core ideas
 
@@ -663,9 +663,9 @@ Microservice thinking still starts in Phase 0. In every phase, use the roadmap's
 - Which failure, concurrency, restart, duplicate, and mixed-version cases matter for this design?
 - What complexity would I remove first if the problem became simpler?
 
-## Cross-phase recall checklist
+## Cross-topic recall checklist
 
-Before calling any phase complete, be able to answer these questions:
+Before calling any topic complete, be able to answer these questions:
 
 - **Contract:** What inputs, outputs, errors, compatibility promises, and ownership boundaries are public?
 - **Data:** Which invariants are authoritative, where are they enforced, and what happens under concurrency?

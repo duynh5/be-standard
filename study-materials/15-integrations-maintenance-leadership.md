@@ -1,10 +1,10 @@
-# Phases 24-26: Integrations, Maintenance, and Leadership
+# Integrations, Maintenance, and Leadership
 
-These phases exercise engineering judgment where systems meet unreliable providers,
+These lessons exercise engineering judgment where systems meet unreliable providers,
 existing behavior, and team review. Completion requires evidence and handoff, not
 only code.
 
-## Phase 24: Common Production Integration Boundaries
+## Common Production Integration Boundaries
 
 ### Goal and mental model
 
@@ -109,7 +109,7 @@ classification are tested; file streaming stays bounded and unauthorized objects
 remain inaccessible; notification callbacks are idempotent; and derived views
 rebuild/reconcile entirely from authoritative state.
 
-## Phase 25: Maintenance and Legacy-System Evolution
+## Maintenance and Legacy-System Evolution
 
 ### Goal and mental model
 
@@ -212,7 +212,7 @@ executed recovery paths; canary rollback works; repair cannot escape scope and l
 durable audit; the seeded regression is diagnosed and prevented; temporary flags and
 compatibility code are removed; and another engineer understands remaining risk.
 
-## Phase 26: Capstone Delivery and Engineering Leadership
+## Capstone Delivery and Engineering Leadership
 
 ### Goal and mental model
 

@@ -1,9 +1,9 @@
-# Phases 1-5: Service Core
+# Service Core
 
-These lessons expand roadmap Phases 1-5. Complete them sequentially. Each phase adds
-one reviewable vertical capability while preserving evidence from earlier phases.
+Complete these lessons sequentially. Each section adds one reviewable vertical
+capability while preserving evidence from earlier work.
 
-## Phase 1: Decisions and Executable Skeleton
+## Decisions and Executable Skeleton
 
 ### Goal and mental model
 
@@ -96,7 +96,7 @@ A clean clone follows one documented setup path; invalid configuration fails wit
 field context and no secret; SIGTERM drains within its limit; local and CI checks
 match; and the ADRs explain decisions without claiming future abstractions exist.
 
-## Phase 2: HTTP Platform
+## HTTP Platform
 
 ### Goal and mental model
 
@@ -113,8 +113,8 @@ recovery so it observes the final recovered status. Authentication will later ru
 inside recovery. Use route templates in logs and metrics, never raw ID-bearing paths.
 
 Liveness checks only process life. Readiness checks whether the instance should
-receive traffic. In this phase it reflects application lifecycle, such as startup
-completion and draining; Phase 3 adds a bounded PostgreSQL probe after that
+receive traffic. In this section it reflects application lifecycle, such as startup
+completion and draining; the persistence section adds a bounded PostgreSQL probe after that
 dependency exists. Both endpoints must have stable semantics documented in OpenAPI.
 
 ### Start with a concrete situation
@@ -154,7 +154,7 @@ instead of remaining architectural claims.
 4. Add request-ID validation/generation, access logging, and panic recovery.
 5. Compose middleware as request ID -> access log -> recovery -> route.
 6. Add live and ready handlers with distinct lifecycle behavior; leave PostgreSQL
-   readiness probing for Phase 3.
+   readiness probing for the persistence section.
 7. Configure server header, read, write, idle, and shutdown timeouts.
 8. Test handlers with `httptest`; do not bind a port for unit-level HTTP tests.
 9. Compare actual examples with the OpenAPI contract.
@@ -181,7 +181,7 @@ The OpenAPI contract matches examples; every untrusted body is bounded and stric
 decoded; all negative cases are deterministic; panics correlate to a private log;
 timeouts are explicit; and health tests prove liveness/readiness separation.
 
-## Phase 3: Persistence Foundation
+## Persistence Foundation
 
 ### Goal and mental model
 
@@ -261,7 +261,7 @@ all queries accept context and parameters; rows, transactions, and cancellations
 release resources; pool limits are documented as a fleet budget; and integration
 tests run in CI.
 
-## Phase 4: Product Slice
+## Product Slice
 
 ### Goal and mental model
 
@@ -342,7 +342,7 @@ The vertical slice has clear boundaries; duplicate SKU maps to a stable conflict
 assumptions; public docs match behavior; and the query plan supports the chosen
 filter/order.
 
-## Phase 5: Order Transaction
+## Order Transaction
 
 ### Goal and mental model
 

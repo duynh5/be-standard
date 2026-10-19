@@ -1,7 +1,7 @@
-# Day 4: Business Logic and Architecture
+# Business Logic and Architecture
 
-This lesson expands Day 4 of the
-[backend learning roadmap](../BACKEND_LEARNING_ROADMAP.md#day-4-business-logic-and-architecture).
+This chapter expands the architecture competency module in the
+[overview and competency map](00-overview-and-competency-map.md#business-logic-and-architecture).
 It turns the HTTP and PostgreSQL work into feature-oriented modules and places the
 order transaction behind one explicit application operation.
 
@@ -460,7 +460,7 @@ representations at each boundary.
 
 ## 9. Object ownership belongs in the query
 
-Although identity middleware is added on Day 5, design the read boundary now:
+Although identity middleware is added in the security chapter, design the read boundary now:
 
 ```sql
 SELECT id, customer_id, status, total_cents, created_at
@@ -537,7 +537,7 @@ Complete these changes sequentially:
 2. Create the `order` feature without generic cross-feature repositories.
 3. Define commands, results, errors, and the narrow placement interface.
 4. Implement command validation with unit tests first.
-5. Implement PostgreSQL placement using the Day 3 transaction and locking strategy.
+5. Implement PostgreSQL placement using the preceding transaction and locking strategy.
 6. Add `POST /v1/orders` as a thin translation layer.
 7. Add customer-scoped order retrieval.
 8. Run unit, handler, integration, race, and vet checks.
@@ -620,7 +620,7 @@ hidden behind the phrase "split inventory into a service."
 
 ## 15. Completion evidence
 
-Day 4 is complete when:
+This chapter is complete when:
 
 - HTTP, business rules, and PostgreSQL concerns have clear dependency direction;
 - `PlaceOrder` validates input and delegates one atomic persistence operation;
@@ -633,4 +633,4 @@ Day 4 is complete when:
   distributed infrastructure;
 - all configured checks pass.
 
-Then continue to Day 5.
+Then continue to [Identity and API security](06-identity-and-api-security.md).
