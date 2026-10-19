@@ -99,7 +99,8 @@ Microservice thinking still starts during domain discovery. In every topic, use 
 - HTTP handlers translate between a public protocol and application operations. They should decode, validate transport concerns, call a use case, and map outcomes to stable responses.
 - Enforce content type, body size, unknown-field rejection, and exactly one JSON value before untrusted input reaches business logic.
 - Problem details give errors a stable machine-readable shape without exposing internal implementation details.
-- Middleware order is behavior: request identity must exist before logging and recovery need it; authentication must run before authorization.
+- Middleware order is behavior: create the request identity first so logging and
+  error recovery can use it; authenticate the caller before checking permissions.
 - Liveness answers "is the process alive?" Readiness answers "should this instance receive traffic?"
 - Server, header, body, and shutdown limits keep slow or malicious clients from holding resources indefinitely.
 
@@ -211,7 +212,7 @@ Microservice thinking still starts during domain discovery. In every topic, use 
 - Logs explain discrete events, metrics reveal aggregate trends, and traces connect work across boundaries. None substitutes completely for the others.
 - Correlation identifiers and trace context let an operator follow a request without logging sensitive payloads.
 - Useful service signals cover traffic, errors, latency distributions, and saturation. Audit events separately record security-relevant actions.
-- Metric labels must have bounded cardinality. User IDs, order IDs, raw URLs, and error strings can make telemetry unusable or expensive.
+- Metric labels must have a bounded number of distinct values, also called bounded cardinality. User IDs, order IDs, raw URLs, and error strings can make telemetry unusable or expensive.
 - Alerts should identify actionable sustained user impact or imminent exhaustion, not every internal anomaly.
 - A runbook joins symptoms to investigation, mitigation, rollback, and escalation.
 
@@ -231,7 +232,7 @@ Microservice thinking still starts during domain discovery. In every topic, use 
 
 ### Core ideas
 
-- Build one immutable artifact and vary runtime configuration between environments. Rebuilding per environment destroys provenance.
+- Build one immutable artifact and vary runtime configuration between environments. Rebuilding per environment destroys its traceable build history (provenance).
 - Containers should run as a non-root user, write only to explicit ephemeral locations, and expose the smallest practical attack surface.
 - Readiness gates traffic; graceful shutdown drains it. Their timings must fit the platform's rollout and termination behavior.
 - Expand-and-contract migrations allow old and new application versions to coexist: add compatible schema, migrate usage/data, then remove old schema later.
@@ -277,12 +278,12 @@ Microservice thinking still starts during domain discovery. In every topic, use 
 
 ### Core ideas
 
-- MVCC gives transactions snapshots while retaining old row versions. Isolation level determines which anomalies are prevented and what may block or abort.
+- Multi-version concurrency control (MVCC) retains older row versions so transactions can read a consistent snapshot while writes continue. The isolation level determines which surprising read or write results are prevented and what may wait or abort.
 - Deadlocks arise from cyclic waits; PostgreSQL aborts one participant. Consistent lock order prevents many deadlocks, while safe whole-operation retries handle expected transient aborts.
-- Vacuum, statistics, bloat, checkpoints, and WAL affect query planning, storage reuse, write latency, replication, and recovery.
+- Vacuum, statistics, unused storage (bloat), checkpoints, and the write-ahead log (WAL) affect query planning, storage reuse, write latency, replication, and recovery.
 - Large migrations should be lock-aware, batched, resumable, observable, and verifiable. A transaction around everything is not automatically safer.
 - Base backups plus continuous WAL archiving enable point-in-time recovery. Replication and standby promotion primarily address availability, not accidental deletion by themselves.
-- RPO measures tolerable data loss; RTO measures tolerable recovery time. Both must be proven by drills.
+- Recovery point objective (RPO) measures tolerable data loss; recovery time objective (RTO) measures tolerable recovery time. Both must be proven by drills.
 
 ### Memory anchors
 
@@ -391,7 +392,7 @@ Microservice thinking still starts during domain discovery. In every topic, use 
 
 ### Core ideas
 
-- Choose HTTP/JSON or gRPC from client compatibility, tooling, contract, streaming, and latency needs, not slogans.
+- Choose HTTP/JSON or gRPC, a binary remote-call protocol with generated types, from client compatibility, tooling, contract, streaming, and latency needs, not slogans.
 - A caller owns an end-to-end deadline budget. Connection, retries, and downstream processing must fit within the remaining time.
 - Retries multiply across layers. Select one intentional layer, bound attempts, add backoff and jitter, and retry only idempotent or protected operations.
 - Circuit breakers limit repeated calls to a failing dependency; bulkheads limit shared-resource damage; load shedding rejects excess work; fallbacks must be semantically honest.
@@ -414,7 +415,7 @@ Microservice thinking still starts during domain discovery. In every topic, use 
 
 ### Core ideas
 
-- Independently owned databases cannot share an ordinary local ACID transaction. Intermediate states are therefore part of the domain model.
+- Independently owned databases cannot share an ordinary local transaction with all-or-nothing guarantees (an ACID transaction). Intermediate states are therefore part of the domain model.
 - A saga is a durable sequence of local transactions. Orchestration centralizes progression; choreography reacts to events and can become harder to understand as interactions grow.
 - Compensation is a new business action, not time travel. It can fail and must be idempotent, observable, and sometimes manual.
 - Durable workflow state records current step, attempts, deadlines, correlation, and the decisions needed to resume after a crash.
@@ -461,7 +462,7 @@ Microservice thinking still starts during domain discovery. In every topic, use 
 ### Core ideas
 
 - Trace context must propagate through HTTP/RPC calls, event metadata, and background jobs so one logical operation remains connected.
-- Baggage propagates broadly and can leak or amplify sensitive/high-cardinality data; keep it minimal and safe.
+- Trace baggage is metadata carried across service boundaries. It spreads broadly and can leak sensitive data or create too many distinct metric values, so keep it minimal and safe.
 - Distributed systems create emergent failures: retry storms, synchronized recovery, fan-out amplification, and backlog growth may not appear in component tests.
 - Tail-aware or error-biased sampling preserves diagnostically valuable slow and failed traces while controlling cost.
 - A chaos experiment needs a hypothesis, bounded blast radius, abort condition, observation plan, and proof of recovery.
@@ -483,7 +484,7 @@ Microservice thinking still starts during domain discovery. In every topic, use 
 
 ### Core ideas
 
-- Cache-aside reads from cache first, loads from the source of truth on a miss, then populates the cache. TTL, invalidation, stampede protection, bypass, and failure behavior define its consistency.
+- Cache-aside reads from cache first, loads from the source of truth on a miss, then populates the cache. Its consistency depends on the entry lifetime (TTL), stale-entry removal, protection against many simultaneous misses (a stampede), bypass, and failure behavior.
 - Read replicas reduce primary read load but introduce lag. Route only operations whose staleness and read-after-write behavior are acceptable.
 - Partitioning limits the amount of data each operation scans or maintains; archival moves old data; retention deletes data. They solve different growth problems.
 - Tenant isolation spans identity, queries, jobs, events, caches, quotas, encryption, telemetry, and operator tools, not just a `tenant_id` column.
@@ -511,7 +512,7 @@ Microservice thinking still starts during domain discovery. In every topic, use 
 - Mutual authentication, encryption in transit, short-lived credentials, least privilege, and rotation reduce lateral movement and credential lifetime.
 - Privacy engineering inventories personal data by purpose, owner, location, retention, access, export, and deletion behavior.
 - Backups and immutable event logs may require policy-based expiry or cryptographic erasure rather than immediate physical deletion; document the limitation honestly.
-- An SBOM records components; provenance and signatures connect source, build, and artifact; vulnerability response turns detection into a verified deployment.
+- A software bill of materials (SBOM) records components; traceable build history (provenance) and signatures connect source, build, and artifact; vulnerability response turns detection into a verified deployment.
 
 ### Memory anchors
 

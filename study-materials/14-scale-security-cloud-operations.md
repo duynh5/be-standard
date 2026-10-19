@@ -11,10 +11,13 @@ Scale each bottleneck from measurement. Caches, replicas, partitions, archives, 
 tenant models solve different problems and introduce different consistency or
 operational costs.
 
-Cache-aside reads check cache, load authoritative data on miss, then populate with a
-bounded TTL. Define key/version, maximum staleness, invalidation after writes,
-behavior during cache outage, stampede protection, size/eviction, and telemetry.
-Cache failure must increase load or latency, not corrupt authoritative state.
+In the cache-aside pattern, a read checks the cache first. If the value is missing,
+the service loads it from the source of truth and stores a temporary copy. Define
+the cache key and version, how long a copy may live (time to live, or TTL), maximum
+acceptable staleness, and when writes remove stale copies. Also define behavior
+during cache outage, size limits and eviction, and protection against a stampede,
+where many simultaneous misses overload the source. Cache failure may increase load
+or latency, but it must not corrupt authoritative state.
 
 Read replicas reduce primary read load but replicate asynchronously. After a write,
 a replica may be stale. Choose per-operation behavior: read from primary for a
@@ -67,7 +70,7 @@ tenant:B:product:P-1
 Trace tenant identity from verified principal through SQL, jobs, events, cache keys,
 metrics, and operator tools. Deliberately omit it at each boundary and confirm the
 system fails closed. Multi-tenancy is not the presence of a `tenant_id` column; it
-is the inability of every path to cross that boundary accidentally.
+is the guarantee that no path can cross the tenant boundary accidentally.
 
 ### Guided work
 
@@ -140,9 +143,11 @@ Deletion is a workflow across primary data, caches, search, events, analytics, a
 provider systems. Immutable audit or backup retention may require documented policy
 rather than immediate physical removal; access and eventual expiry must be explicit.
 
-Supply-chain controls connect source to artifact: locked dependencies, reviewed
-updates, reproducible build inputs, SBOM, provenance, signing, verification before
-deployment, vulnerability inventory, and a normal patched release path.
+Software-supply-chain controls connect source code to the deployed artifact. They
+include locked dependencies, reviewed updates, reproducible build inputs, a software
+bill of materials (SBOM) listing components, a traceable build history (provenance),
+artifact signing, verification before deployment, a vulnerability inventory, and a
+normal patched-release path.
 
 ### Start with a concrete situation
 
@@ -162,7 +167,7 @@ For every copy, record purpose, access, retention, export, and deletion behavior
 Deletion becomes a workflow because one API `DELETE` cannot atomically erase caches,
 queued messages, provider state, backups, and derived data.
 
-A software bill of materials (SBOM) is the component inventory for a built artifact.
+A software bill of materials is the component inventory for a built artifact.
 Provenance records how that artifact was produced. A signature lets deployment
 verify the artifact's identity. Practice the full chain by choosing one test
 dependency advisory, locating affected artifacts, rebuilding, verifying, and
@@ -178,7 +183,7 @@ releasing the patch.
 5. Automate secret/certificate rotation with overlap and revocation verification.
 6. Build the sensitive-data inventory and minimize unnecessary fields.
 7. Implement export and deletion as durable, idempotent, auditable workflows.
-8. Include caches, messages, backups policy, derived stores, and providers.
+8. Include caches, messages, backup policy, derived stores, and providers.
 9. Generate SBOM/provenance, sign artifacts, and verify before deployment.
 10. Run a vulnerability drill from advisory to affected artifact, patch, rebuild,
    verification, rollout, and residual-risk closure.
@@ -209,6 +214,11 @@ artifacts are verified; and the vulnerability drill completes through normal rel
 ## Cloud Infrastructure and IAM
 
 ### Goal and mental model
+
+Identity and access management (IAM) controls which people and workloads may use
+which cloud resources. Infrastructure as code (IaC) stores the intended cloud
+resources and permissions in reviewed, versioned files instead of relying on manual
+console changes.
 
 Provision a reproducible non-production environment while making administrative,
 network, and identity boundaries explicit. Managed services reduce infrastructure
@@ -253,11 +263,9 @@ and "Which identity is authorized to perform the operation?" A route without
 permission fails differently from permission without a route. Logging and failure
 tests must distinguish those cases.
 
-Identity and access management (IAM) is the system of principals, roles, and
-permissions controlling cloud resources. Infrastructure as code (IaC) is a reviewed,
-versioned description of those resources. Begin with an isolated non-production
-environment and one narrowly scoped workload role. Deny one permission at a time
-and learn the resulting diagnostic signal before expanding the topology.
+Begin with an isolated non-production environment and one narrowly scoped workload
+role. Deny one permission at a time and learn the resulting diagnostic signal before
+expanding the topology.
 
 ### Guided work
 

@@ -65,8 +65,8 @@ Build source code once and promote the same artifact through environments. Runti
 configuration selects environment-specific endpoints, limits, and credentials.
 
 Do not bake production configuration or secrets into the binary or image. Rebuilding
-per environment weakens provenance: the artifact tested in staging is no longer the
-artifact deployed to production.
+for each environment breaks the traceable build history (provenance): the artifact
+tested in staging is no longer the artifact deployed to production.
 
 Useful build metadata includes source revision, build time, Go version, and artifact
 digest. Expose only non-sensitive version identity in logs or a protected diagnostic
@@ -106,9 +106,10 @@ ENTRYPOINT ["/api"]
 ```
 
 Before adopting these example tags, pin versions and preferably immutable digests
-verified by the project. If the application needs CA roots, time-zone data, or CGO,
-select and test a runtime image that provides them. Do not copy the compiler, source
-tree, Git metadata, local credentials, or `.env` files into the final image.
+verified by the project. If the application needs a trusted certificate list (CA
+roots), time-zone data, or Go's bridge to C libraries (CGO), select and test a
+runtime image that provides them. Do not copy the compiler, source tree, Git
+metadata, local credentials, or `.env` files into the final image.
 
 Use a `.dockerignore` to reduce accidental build context:
 
@@ -154,7 +155,7 @@ before opening the server:
 
 - listen address;
 - database URL;
-- trusted OIDC issuer and audience;
+- trusted OpenID Connect (OIDC) identity provider and intended token audience;
 - request and shutdown limits;
 - database pool maximum;
 - telemetry exporter configuration;
@@ -214,8 +215,8 @@ The pipeline should:
 6. Run the race detector in a suitable job.
 7. Run the pinned vulnerability scanner.
 8. Build the binary and container.
-9. record artifact identity and checksums.
-10. publish only after all required checks pass.
+9. Record artifact identity and checksums.
+10. Publish only after all required checks pass.
 
 Pin CI actions, tool versions, and base images. Grant the pipeline the minimum token
 permissions. Do not expose secrets to untrusted pull-request code. Cache dependencies
@@ -280,7 +281,7 @@ Before deployment, record:
 
 - artifact to deploy;
 - schema compatibility window;
-- health and SLO signals to watch;
+- health signals and service reliability targets (SLOs) to watch;
 - automatic and manual stop conditions;
 - rollback compatibility;
 - roll-forward owner and expected time;
@@ -338,7 +339,7 @@ The maximum safe request rate is constrained by the tightest part of the path:
 - database pool and PostgreSQL connection capacity;
 - row-lock contention and transaction duration;
 - telemetry queues;
-- identity-provider/JWKS traffic;
+- traffic that fetches the identity provider's public signing keys (JWKS);
 - downstream quotas and rate limits.
 
 If 20 instances each open 20 database connections, the potential application total
@@ -541,7 +542,8 @@ available non-production platform; orchestration is covered in a later chapter.
 
 ### Expected answers
 
-1. The tested artifact retains the same provenance and bytes through promotion.
+1. The tested artifact retains the same bytes and traceable build history through
+   promotion.
 2. Tool/source choices at build time, non-secret environment behavior at runtime,
    and credentials in a controlled secret mechanism.
 3. Local and CI behavior stay reproducible and do not drift into two workflows.

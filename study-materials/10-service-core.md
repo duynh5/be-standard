@@ -114,8 +114,9 @@ inside recovery. Use route templates in logs and metrics, never raw ID-bearing p
 
 Liveness checks only process life. Readiness checks whether the instance should
 receive traffic. In this section it reflects application lifecycle, such as startup
-completion and draining; the persistence section adds a bounded PostgreSQL probe after that
-dependency exists. Both endpoints must have stable semantics documented in OpenAPI.
+completion and draining. The persistence section adds a bounded PostgreSQL probe
+after that dependency exists. Both endpoints must have stable semantics documented
+in OpenAPI, the machine-readable description of the HTTP API.
 
 ### Start with a concrete situation
 

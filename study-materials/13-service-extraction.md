@@ -97,10 +97,11 @@ Extract inventory only after defining the remote contract and accepting that a l
 transaction no longer protects order plus inventory. Every remote call can be slow,
 unavailable, duplicated, or ambiguous.
 
-Choose HTTP/JSON when broad compatibility, inspection, and existing tooling matter.
-Choose gRPC when strongly typed contracts, streaming, and controlled clients justify
-its tooling. Protocol choice does not remove deadlines, compatibility, authorization,
-or failure handling.
+Choose HTTP/JSON when broad compatibility, easy inspection, and existing tooling
+matter. Choose gRPC, a binary remote-call protocol with generated client and server
+types, when streaming or tightly controlled clients justify its extra tooling.
+Protocol choice does not remove deadlines, compatibility, authorization, or failure
+handling.
 
 Set a total request deadline, reserve time for local work and response, and give the
 dependency only the remaining budget. Propagate cancellation. Configure bounded
@@ -122,7 +123,8 @@ distributed-workflows section expands this minimum safe bridge into the complete
 Protect dependencies with distinct tools:
 
 - concurrency limit: caps simultaneous calls;
-- bulkhead: isolates resources by dependency/workload;
+- bulkhead: gives a dependency or workload its own resource limit, so its failure
+  cannot consume every connection or worker;
 - circuit breaker: temporarily avoids calls after strong failure evidence;
 - load shedding: rejects work that cannot finish within objectives;
 - fallback: returns deliberately degraded behavior only when semantically safe.
@@ -209,9 +211,10 @@ and saturation; and healthy recovery is demonstrated.
 ### Goal and mental model
 
 Separate databases cannot participate in the former local order transaction without
-specialized distributed transactions and their own availability cost. Model a saga:
+specialized coordination that adds availability cost. Model the workflow as a saga:
 a durable sequence of local commits with expected intermediate states and explicit
-compensation.
+actions that undo the business effect when a later step fails. Those actions are
+called compensation; unlike a database rollback, they can also fail.
 
 Example order state machine:
 
@@ -230,9 +233,10 @@ Compensation is a business action, not time reversal. Releasing inventory may fa
 arrive twice, or happen after another state change. It needs its own idempotency key,
 authorization, deadline, retry, and terminal outcome.
 
-Choose orchestration when one durable workflow owner should decide transitions and
-provide a clear operator view. Choreography reduces a central coordinator but can
-hide the workflow across many event reactions. Use the simplest style that keeps
+Choose orchestration when one durable workflow owner should decide each next step
+and provide a clear operator view. Choose choreography when services should react to
+events without one central coordinator, but recognize that the complete workflow can
+become hard to see across many event handlers. Use the simplest style that keeps
 state and ownership explicit.
 
 Every transition stores current state, version, correlation, attempts, timestamps,
@@ -443,8 +447,10 @@ stopped.
 ### Guided work
 
 1. Propagate standard trace context API -> saga -> broker -> worker -> service.
-2. Define an allowlist for baggage/event correlation metadata.
-3. Add per-service and dependency RED metrics plus queue age/backlog.
+2. Define an allowlist for baggage, the small set of trace metadata carried across
+   service boundaries, and for event correlation metadata.
+3. Add per-service and dependency metrics for request rate, errors, and duration
+   (RED), plus queue age and backlog.
 4. Build an end-to-end order dashboard and trace search workflow.
 5. Define sampling that retains errors and slow operations within cost bounds.
 6. Write experiments for dependency latency, connection loss, instance loss,

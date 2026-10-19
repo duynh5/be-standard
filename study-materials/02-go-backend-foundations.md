@@ -635,6 +635,10 @@ func fetchBody(ctx context.Context, client *http.Client, url string) ([]byte, er
 }
 ```
 
+This example focuses on cleanup ownership. Production client code must also limit
+the response body before reading it so an upstream server cannot force an unbounded
+allocation.
+
 SQL rows also own resources. Close them when the function returns, and check
 `rows.Err()` after iteration because an error may occur while fetching later rows:
 
@@ -828,7 +832,10 @@ For code that waits on a channel, observe cancellation with `select`:
 ```go
 func waitForProduct(ctx context.Context, results <-chan Product) (Product, error) {
     select {
-    case product := <-results:
+    case product, ok := <-results:
+        if !ok {
+            return Product{}, errors.New("product result channel closed")
+        }
         return product, nil
     case <-ctx.Done():
         return Product{}, ctx.Err()

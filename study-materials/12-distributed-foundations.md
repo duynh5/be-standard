@@ -38,7 +38,8 @@ poison job or insufficient worker capacity violates the objective.
 Schedulers run on more than one replica. Prefer an idempotent, concurrency-safe
 operation such as deleting expired idempotency rows in bounded batches. If exactly
 one active scheduler is required, use a maintained lease/lock with clear expiry and
-fencing rather than an in-memory boolean.
+an increasing claim number that lets storage reject an old owner. This protection is
+called fencing; an in-memory boolean cannot provide it across processes.
 
 ### Start with a concrete situation
 
@@ -83,8 +84,9 @@ current claim." Build this stale-worker experiment before adding concurrency.
 Kill a worker before effect, after effect, and before acknowledgement. Expire a lease
 while a paused worker later resumes, then prove its old claim token cannot modify the
 new attempt. Feed one permanently invalid job among healthy jobs. Run two scheduler
-replicas. Fill the queue faster than workers and verify bounded storage/backpressure
-plus rising age alerts.
+replicas. Fill the queue faster than workers and verify bounded storage plus
+backpressure, meaning producers slow down or receive a clear rejection when workers
+cannot keep up. Verify that queue-age alerts rise too.
 
 ### Knowledge check and expected answers
 
@@ -113,8 +115,9 @@ and publication intent in one database transaction.
 
 An event inserted only after the business commit is not a transactional outbox. If an
 event is deliberately derived from authoritative state instead, name that weaker
-guarantee and run a bounded, tested reconciliation process that reconstructs missing
-intent after crashes.
+guarantee and run a bounded, tested repair process. This process, called
+reconciliation, compares the source of truth with published work and reconstructs
+missing intent after crashes.
 
 An outbox event includes immutable event ID, aggregate ID, event type, schema version,
 occurred time, bounded payload, ordering key, attempt state, and publication metadata.
@@ -135,7 +138,8 @@ Consumers must still handle redelivery and version-compatible older events.
 
 "Exactly once" must name the boundary. A broker may deduplicate its log writes while
 an email provider still receives a duplicate request. End-to-end safety comes from
-idempotent effect identity and reconciliation.
+an effect that is safe to request more than once, plus later comparison and repair
+(reconciliation).
 
 ### Start with a concrete situation
 
@@ -222,13 +226,16 @@ means the caller stopped waiting, not that the remote side did nothing. A partit
 can leave both sides healthy but unable to communicate.
 
 A lease grants authority until an expiry assumption, but a paused old owner can wake
-after another owner takes over. A monotonically increasing fencing token travels
-with writes; the protected resource rejects tokens older than the highest accepted.
+after another owner takes over. Each new owner receives a larger claim number, called
+a fencing token, and sends it with writes. The protected resource rejects a number
+older than the highest one it has accepted.
 
-Quorum behavior depends on replica count and required acknowledgements. With `N`
-replicas, read quorum `R`, and write quorum `W`, overlap when `R + W > N` can help a
-read observe a successful write under stated assumptions, but conflict resolution,
-failures, and sloppy quorums still need explicit design.
+A quorum is the minimum number of replicas that must answer before an operation is
+accepted. With `N` replicas, read quorum `R`, and write quorum `W`, the read and write
+sets must overlap when `R + W > N`. That overlap can help a later read observe a
+successful write under stated assumptions, but conflicts and failures still need
+explicit rules. Some systems also accept replies from substitute replicas (a
+"sloppy quorum"), which changes those assumptions.
 
 Consistent hashing reduces key movement as nodes change. Virtual nodes improve
 distribution. It does not replicate data, resolve concurrent writes, or guarantee

@@ -593,7 +593,8 @@ hidden behind the phrase "split inventory into a service."
 
 ## 14. Knowledge check
 
-1. Why is an HTTP request DTO not automatically a domain object?
+1. Why is an HTTP request data-transfer object (DTO) not automatically a domain
+   object?
 2. Which dependency direction protects business logic from frameworks?
 3. What belongs outside versus inside the placement transaction?
 4. Why does the consumer own the placement interface?

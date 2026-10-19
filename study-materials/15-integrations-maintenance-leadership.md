@@ -23,9 +23,11 @@ documented algorithm and key, compare signatures safely, check a bounded timesta
 replay window, deduplicate event identity durably, and return quickly after recording
 durable work. Key rotation requires overlapping verification keys. Outbound webhook
 delivery needs attempt history, signature, idempotent event identity, backoff,
-disable/quarantine rules, and customer-visible diagnostics. Treat subscriber URLs as
-SSRF input: require HTTPS, resolve and reject private/link-local destinations, prevent
-or revalidate redirects, defend against DNS rebinding, and restrict runtime egress.
+disable/quarantine rules, and customer-visible diagnostics. A subscriber-controlled
+URL can trick the service into connecting to a private or otherwise forbidden
+address. This attack is called server-side request forgery (SSRF). Require HTTPS,
+resolve and reject private/link-local destinations, prevent or revalidate redirects,
+defend against DNS rebinding, and restrict runtime egress.
 Retry network failures, throttling, and selected server failures; treat most client
 errors as permanent, honor `Retry-After`, and use bounded backoff with jitter.
 
@@ -56,16 +58,16 @@ succeeded. Treat the body as hostile until its size, signature, timestamp, and e
 identity are verified. Store durable work before replying if the provider interprets
 a successful response as final acknowledgement.
 
-Server-side request forgery (SSRF) occurs when an attacker makes the service connect
-to an unintended address, often through a supplied webhook URL. HTTPS syntax alone
+SSRF occurs when an attacker makes the service connect to an unintended address,
+often through a supplied webhook URL. HTTPS syntax alone
 does not make a destination safe: DNS can resolve to private or link-local systems,
 and redirects can change the destination after validation. Destination policy,
 resolution checks, redirect handling, and restricted network egress must work
 together.
 
 Learn one outbound call and one inbound webhook completely before adding uploads,
-email, search, and analytics. The same boundary questions—identity, limits,
-ambiguity, retry, durable state, and observability—then become recognizable.
+email, search, and analytics. The same boundary questions (identity, limits,
+ambiguity, retry, durable state, and observability) then become recognizable.
 
 ### Guided work
 
@@ -98,8 +100,8 @@ Delete the search index and rebuild it while new events arrive.
    parsing/re-encoding changes them and unverified input is untrusted.
 2. **Why direct-upload to object storage?** It avoids buffering large files through
    application memory while preserving scoped authorization and validation.
-3. **Why must a read model be rebuildable?** It is eventually consistent derived
-   state and can drift, corrupt, or need a schema/index replacement.
+3. **Why must a read model be rebuildable?** It is derived state that is eventually
+   consistent and can drift, become corrupted, or need a schema/index replacement.
 
 ### Completion evidence
 
@@ -242,7 +244,7 @@ The design document should contain:
 12. test evidence and unresolved/residual risk.
 
 Request critical review before implementation. Record each finding, decision,
-rationale, owner, and resulting design change. Disagreement should become explicit
+rationale, owner, and resulting design change. Disagreement should become an explicit
 tradeoff, not silent avoidance.
 
 Split delivery into independently reviewable vertical increments. Each preserves

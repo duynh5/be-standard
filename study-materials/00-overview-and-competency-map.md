@@ -2,10 +2,10 @@
 
 ## 1. Purpose
 
-This repository is both a working service and a self-paced path from beginner to
-competent senior backend engineering. Go is the reference language, but the
-backend principles are language-independent unless a section explicitly describes
-Go runtime or tooling behavior.
+This repository is both a service-building project and a self-paced path from
+beginner to competent senior backend engineering. Go is the reference language, but
+the backend principles are language-independent unless a section explicitly
+describes Go runtime or tooling behavior.
 
 Completing the material should produce strong, demonstrable backend competence,
 but a repository cannot replace feedback from experienced reviewers or real
@@ -132,11 +132,11 @@ Start with a small, explicit toolset. Check dependency versions and maintenance 
 | Migrations | Goose | Versioned, repeatable schema changes |
 | Configuration | Environment variables parsed once into a typed struct | Explicit startup validation and deployment portability |
 | Logging | `log/slog` JSON output | Structured standard-library logging |
-| Telemetry | OpenTelemetry for traces and metrics | Vendor-neutral instrumentation |
-| API contract | OpenAPI | Reviewable client/server contract and documentation |
+| Telemetry | OpenTelemetry for request traces and numeric service measurements | A standard way to observe the service without tying it to one vendor |
+| API contract | OpenAPI, a machine-readable description of the HTTP API | Reviewable client/server contract and generated documentation |
 | Local dependencies | Docker Compose | Reproducible PostgreSQL and telemetry services |
 | CI | Repository-native CI running Go checks and migrations | Prevents unverified changes from merging |
-| Authentication | External OIDC provider; validate access tokens | Do not build password or token issuance as a learning shortcut |
+| Authentication | External OpenID Connect (OIDC) identity provider; validate access tokens | Do not build password or token issuance as a learning shortcut |
 
 Dependency policy:
 
@@ -241,7 +241,8 @@ Detailed lesson: [Business logic and architecture](05-business-logic-and-archite
 
 Learn:
 
-- transport DTOs are not automatically domain or database models;
+- transport data-transfer objects (DTOs), which represent request and response data,
+  are not automatically domain or database models;
 - business invariants belong in the use case/domain, with critical integrity also enforced by the database;
 - interfaces belong at actual substitution boundaries and should remain narrow;
 - dependency injection can be ordinary constructor parameters;
@@ -262,18 +263,21 @@ Stretch: document the transaction and locking choice in a short architecture dec
 
 ### Identity and API security
 
-Detailed lesson: [Identity and API security](06-identity-and-api-security.md). It explains resource-server security and guides token and JWKS validation, principal propagation, role and object authorization, negative tests, redaction, and threat modeling.
+Detailed lesson: [Identity and API security](06-identity-and-api-security.md). It explains resource-server security and guides token validation using the identity provider's published public keys, trusted-identity propagation, role and object authorization, negative tests, redaction, and threat modeling.
 
 Learn:
 
 - authentication proves identity; authorization decides allowed actions;
 - object-level authorization must scope the data query, not only hide UI controls;
 - OAuth 2.0 and OpenID Connect roles at a high level: issuer, client, resource server, access token;
-- OIDC discovery, JWKS rotation, issuer/audience/algorithm validation, expiry, clock skew, and key-cache failure;
-- opaque tokens versus JWTs, revocation limitations, browser sessions, secure cookies, and logout;
+- OpenID Connect (OIDC) discovery, rotation of the provider's published public keys
+  (JWKS), issuer/audience/algorithm validation, expiry, clock skew, and key-cache failure;
+- opaque tokens versus locally verifiable JSON Web Tokens (JWTs), revocation
+  limitations, browser sessions, secure cookies, and logout;
 - password storage, token issuance, and account recovery are separate security products;
-- CORS is a browser policy, not API authentication;
-- CSRF matters when browsers automatically attach credentials such as cookies;
+- cross-origin resource sharing (CORS) is a browser policy, not API authentication;
+- cross-site request forgery (CSRF) matters when browsers automatically attach
+  credentials such as cookies;
 - secret storage, least privilege, audit events, rate limits, and abuse controls;
 - mass assignment, over-posting, injection, and sensitive-data exposure.
 
@@ -292,7 +296,7 @@ Stretch: write a compact threat model covering assets, trust boundaries, likely 
 
 ### Tests, observability, and operations
 
-Detailed lesson: [Testing, observability, and operations](07-testing-observability-and-operations.md). It explains evidence at each test and telemetry boundary and guides failure drills, resource limits, safe retries, an SLO, an alert, and a runbook.
+Detailed lesson: [Testing, observability, and operations](07-testing-observability-and-operations.md). It explains evidence at each test and telemetry boundary and guides failure drills, resource limits, safe retries, a measurable service reliability target (service-level objective, or SLO), an alert, and a runbook.
 
 Learn:
 
@@ -580,9 +584,12 @@ Detailed lesson: [Advanced PostgreSQL operations and recovery](11-production-ser
 
 Learn:
 
-- MVCC snapshots and isolation levels allow different anomalies and blocking behavior;
+- PostgreSQL keeps older row versions so transactions can read consistent snapshots
+  while writes continue; this is multi-version concurrency control (MVCC), and its
+  isolation settings determine which surprising results, waits, or aborts are possible;
 - row/table locks, lock ordering, deadlocks, statement timeouts, and retry policy affect correctness and availability;
-- statistics, vacuum, bloat, checkpoints, WAL, and query plans influence production behavior;
+- statistics, cleanup work (vacuum), unused storage (bloat), checkpoints, the
+  write-ahead log (WAL), and query plans influence production behavior;
 - large indexes, constraints, type changes, and backfills require lock-aware, resumable migration strategies;
 - backups, continuous WAL archiving, point-in-time recovery, replication, and standby promotion solve different recovery and availability problems;
 - recovery point objective (RPO) and recovery time objective (RTO) are claims that must be measured by drills.
@@ -610,8 +617,10 @@ Detailed lesson: [Durable background jobs and scheduling](12-distributed-foundat
 Learn:
 
 - an in-process goroutine is not a durable job system;
-- at-least-once execution, visibility leases, acknowledgements, retry schedules, and dead-letter handling;
-- idempotent handlers, deduplication, poison jobs, backpressure, and graceful worker shutdown;
+- at-least-once execution means a job may run again after a crash, so workers need
+  time-limited claims, completion acknowledgements, and bounded retry schedules;
+- handlers must make duplicates harmless, quarantine permanently failing jobs, slow
+  or reject new work when workers cannot keep up, and shut down cleanly;
 - periodic scheduling, leader election, clock behavior, and why multiple replicas may run the same task;
 - queue age and backlog are often more useful than queue length alone.
 
@@ -635,9 +644,12 @@ Detailed lesson: [Reliable event publication and consumption](12-distributed-fou
 
 Learn:
 
-- a database commit and broker publish cannot normally be one local atomic transaction;
-- the transactional outbox makes state change and publication intent atomic;
-- consumers should assume duplicate delivery and persist an inbox/deduplication record with their state change;
+- a database commit and message-broker publish cannot normally be one all-or-nothing
+  local transaction;
+- the transactional outbox stores the business change and the intent to publish a
+  message in the same database transaction;
+- consumers should assume duplicate delivery and record each processed message in
+  the same transaction as the consumer's own state change;
 - delivery guarantees, ordering scope, partition keys, offsets, consumer groups, replay, schema evolution, and retention;
 - "exactly once" is always scoped to particular components and side effects.
 
@@ -646,7 +658,8 @@ Deliver:
 - an `OrderPlaced` event written to an outbox in the order transaction;
 - an outbox relay that publishes to a local broker and marks publication safely;
 - a notification consumer with an inbox/deduplication strategy and retry/dead-letter behavior;
-- an AsyncAPI or equivalent event contract containing ownership, schema version, ordering key, and compatibility rules.
+- an AsyncAPI document, or an equivalent machine-readable event contract, containing
+  ownership, schema version, ordering key, and compatibility rules.
 
 Acceptance criteria:
 
@@ -663,9 +676,12 @@ Learn:
 
 - wall clocks can jump while monotonic time measures elapsed duration; distributed nodes do not share a perfectly ordered clock;
 - network partitions, delay, loss, duplication, and asymmetric reachability create partial failure;
-- replication, quorum reads/writes, consistency, and availability have workload-specific tradeoffs;
-- leases without fencing can let an expired owner corrupt state after a pause;
-- leader election and consensus coordinate replicated state, but application teams should normally use proven implementations;
+- replicated data may require replies from a minimum number of copies (a quorum),
+  trading availability and response time against how current a result is;
+- a time-limited ownership claim (lease) needs an increasing claim number (fencing
+  token) so storage can reject an old owner that resumes after a pause;
+- leader election and consensus let nodes agree on ordered state despite failures,
+  but application teams should normally use proven implementations;
 - consistent hashing changes redistribution behavior, not data correctness by itself.
 
 Deliver:
@@ -717,12 +733,16 @@ Detailed lesson: [Synchronous service communication and the system edge](13-serv
 
 Learn:
 
-- choose HTTP/JSON or gRPC from compatibility, tooling, latency, and client requirements;
+- choose HTTP/JSON or gRPC, a binary remote-call protocol with generated types, from
+  compatibility, tooling, latency, and client requirements;
 - API gateways handle edge concerns but must not become a shared business-logic layer;
 - service discovery and load balancing map a logical dependency to changing instances;
 - callers need a total deadline budget; each downstream call consumes part of it;
 - retries require idempotency, bounded attempts, backoff, jitter, and one intentional retry layer;
-- circuit breakers, concurrency limits, bulkheads, load shedding, and fallbacks have specific tradeoffs.
+- failure controls have different jobs: a circuit breaker pauses calls to an unhealthy
+  dependency, a concurrency limit caps simultaneous calls, a bulkhead gives one
+  dependency its own resource pool, load shedding rejects excess work, and a fallback
+  returns deliberately reduced behavior.
 
 Deliver:
 
@@ -745,10 +765,13 @@ Detailed lesson: [Distributed workflows and eventual consistency](13-service-ext
 
 Learn:
 
-- a local ACID transaction cannot atomically update independently owned service databases;
+- one local all-or-nothing database transaction (an ACID transaction) cannot update
+  independently owned service databases;
 - eventual consistency means intermediate states are expected and must be modeled explicitly;
-- sagas coordinate local transactions through orchestration or choreography;
-- compensating actions are business operations, not automatic database rollbacks;
+- a saga is a durable sequence of local transactions; one coordinator may choose the
+  steps (orchestration), or services may react to one another's events (choreography);
+- an action that reverses a business effect (compensation) is a new operation that can
+  fail, not an automatic database rollback;
 - workflows need durable state, timeouts, correlation, idempotency, and manual-repair paths.
 
 Deliver:
@@ -800,7 +823,8 @@ Detailed lesson: [Distributed observability and resilience validation](13-servic
 Learn:
 
 - trace context must cross HTTP, RPC, broker, and background-job boundaries;
-- service-level metrics need dependency dimensions without unbounded cardinality;
+- service metrics may identify a dependency, but label values must come from a small,
+  controlled set rather than unbounded IDs or URLs;
 - fan-out, retry storms, cascading failure, queue buildup, and coordinated recovery create emergent behavior;
 - sampling must retain enough errors and slow traces to support diagnosis;
 - chaos experiments require a hypothesis, bounded blast radius, abort condition, and recovery check.
@@ -835,7 +859,9 @@ Learn:
 
 Deliver:
 
-- a cache-aside product read path with TTL, invalidation policy, stampede protection, and bypass;
+- a product read path that checks a cache first, gives entries a fixed lifetime (TTL),
+  removes stale values after writes, prevents many simultaneous misses from
+  overloading the database, and can bypass the cache;
 - a read-replica experiment with documented consistency behavior;
 - a measured partitioning or archival exercise using representative data volume;
 - tenant identity propagated and enforced in APIs, jobs, events, queries, and telemetry;
@@ -858,14 +884,16 @@ Learn:
 - user identity propagation differs from workload identity between services;
 - transport encryption, mutual authentication, least privilege, and secret rotation reduce lateral movement;
 - privacy requires data inventory, purpose, minimization, retention, deletion, export, and auditability;
-- dependency provenance, reproducible builds, SBOMs, artifact signing, and vulnerability response protect delivery.
+- traceable build history (provenance), reproducible builds, component inventories
+  (software bills of materials, or SBOMs), artifact signing, and vulnerability
+  response protect delivery.
 
 Deliver:
 
 - updated threat models and data-flow diagrams for the distributed system;
 - workload identities and least-privilege authorization for service and broker access;
 - automated secret/certificate rotation without service interruption;
-- user-data export and deletion workflows that include caches, events, backups policy, and derived stores;
+- user-data export and deletion workflows that include caches, events, backup policy, and derived stores;
 - SBOM generation, artifact signing/verification, dependency update automation, and a vulnerability-response drill.
 
 Acceptance criteria:
@@ -875,15 +903,18 @@ Acceptance criteria:
 - sensitive-data inventory maps every field to purpose, owner, retention, and deletion behavior;
 - a vulnerable dependency can be identified, patched, rebuilt, verified, and deployed through the normal pipeline.
 
-### Cloud infrastructure and IAM
+### Cloud infrastructure and identity and access management (IAM)
 
 Detailed lesson: [Cloud infrastructure and IAM](14-scale-security-cloud-operations.md#cloud-infrastructure-and-iam).
 
 Learn:
 
 - cloud accounts/projects, regions, and availability zones define administrative and failure boundaries;
-- virtual networks, subnets, route tables, firewalls/security groups, NAT, private endpoints, and controlled egress shape connectivity;
-- DNS, certificate management, TLS termination, load balancers, and health checks form the service edge;
+- virtual networks, subnets, route tables, firewalls/security groups, outbound address
+  translation (NAT), private endpoints, and controlled outbound traffic shape
+  connectivity;
+- internet naming (DNS), certificate management, encrypted-connection termination
+  (TLS), load balancers, and health checks form the service edge;
 - human identity, workload identity, roles, policies, short-lived credentials, and encryption keys require different controls;
 - managed databases, queues, object storage, and secret stores transfer some operations but not application responsibility;
 - infrastructure as code needs protected state, review, drift detection, policy checks, budgets, audit logs, and safe teardown.
@@ -919,7 +950,7 @@ Learn:
 Deliver:
 
 - deploy the system to a local or non-production Kubernetes environment;
-- manifests or a small template for workloads, services, ingress, configuration, secrets references, and network policies;
+- manifests or a small template for workloads, services, ingress, configuration, secret references, and network policies;
 - resource requests/limits, health probes, autoscaling signals, disruption budgets, and controlled rollouts;
 - infrastructure-as-code validation and an environment bootstrap/teardown procedure;
 - a platform runbook for failed rollout, unschedulable workload, bad configuration, and capacity exhaustion.
@@ -1081,7 +1112,11 @@ A transaction represents one atomic business operation. Keep it short, do not ma
 
 Always handle commit failure. A deferred rollback is safe cleanup, not a substitute for checking commit.
 
-Database ownership also includes operations and recovery. Know how isolation, locks, deadlocks, statistics, vacuum, WAL, replication, backups, and schema changes affect the running service. A backup is not trusted until a restore has verified application-level invariants, and a standby is not a recovery plan until promotion and client reconnection have been exercised.
+Database ownership also includes operations and recovery. Know how isolation, locks,
+deadlocks, statistics, cleanup work, the write-ahead log, replication, backups, and
+schema changes affect the running service. A backup is not trusted until a restore
+has verified application-level invariants, and a standby is not a recovery plan until
+promotion and client reconnection have been exercised.
 
 ### API design
 
@@ -1099,7 +1134,13 @@ Treat the API as a public contract:
 
 Authorization belongs at both the use-case boundary and the query/data scope. A valid token is not permission to access every object. Default to deny, use least privilege, and test horizontal access between two ordinary users, not just admin versus anonymous.
 
-Token validation must pin trusted issuers, audiences, algorithms, and key sources; handle expiry and bounded clock skew; and survive signing-key rotation. JWTs reduce introspection calls but make immediate revocation difficult. Opaque sessions or tokens move state to an authorization service. Browser cookies add `Secure`, `HttpOnly`, `SameSite`, session fixation, logout, and CSRF concerns that bearer-token APIs may not share.
+Token validation must pin trusted issuers, audiences, algorithms, and key sources;
+handle expiry and bounded clock skew; and survive signing-key rotation. JSON Web
+Tokens (JWTs) can be checked locally, reducing calls to an identity service, but that
+also makes immediate revocation difficult. Opaque sessions or tokens keep the state
+in an authorization service. When browsers automatically attach cookies, requests
+also need protection against cross-site request forgery (CSRF), in addition to secure
+cookie settings and safe login/logout behavior.
 
 ### Concurrency and bounded resources
 
@@ -1128,7 +1169,8 @@ Use:
 - **traces** for causal paths and time spent across boundaries;
 - **profiles** for CPU, memory, lock, and goroutine analysis when needed.
 
-Avoid high-cardinality metric labels such as user ID, request ID, or raw URL. Keep those dimensions in logs or traces.
+Avoid metric labels with too many distinct values, such as user ID, request ID, or raw
+URL. Keep those dimensions in logs or traces.
 
 ### Deployments and schema evolution
 
@@ -1144,13 +1186,19 @@ Deployments are normal failure events. The service must handle termination, unav
 
 Cloud systems combine network, identity, compute, storage, and managed-service boundaries. Keep application data services private, expose only intentional edges, use short-lived workload identities, restrict ingress and egress, encrypt data with owned access policy, and retain audit evidence. Infrastructure as code should reproduce environments, reveal reviewable changes, detect drift, protect state, and make teardown as deliberate as creation.
 
-Kubernetes is one workload platform within this environment, not a replacement for cloud networking, IAM, DNS, certificates, databases, backups, or cost control.
+Kubernetes is one workload platform within this environment, not a replacement for
+cloud networking, identity and access management (IAM), naming (DNS), certificates,
+databases, backups, or cost control.
 
 ### Background work and messaging
 
 Once work outlives an HTTP request, it needs a durable lifecycle. Define who creates it, where intent is stored, how workers claim it, how long a claim lasts, which failures retry, how duplicates are made harmless, when work is quarantined, and how an operator replays or cancels it.
 
-Message delivery and business effect are different guarantees. A broker can redeliver a committed message after a consumer crashes. Consumers should therefore expect at-least-once delivery, make effects idempotent, and record progress atomically with local state when possible. Ordering is normally guaranteed only within a stated key or partition, not across an entire system.
+Message delivery and business effect are different guarantees. A broker can redeliver
+a committed message after a consumer crashes. Consumers should therefore expect a
+message more than once, make repeated processing harmless, and record progress in
+the same local transaction as the state change when possible. Ordering is normally
+guaranteed only within a stated key or partition, not across an entire system.
 
 ### Microservices and distributed systems
 
@@ -1158,7 +1206,13 @@ A service is an ownership and deployment boundary, not just another process. It 
 
 Distribution introduces partial failure: one component can be healthy while its network path, dependency, or caller is not. Every remote call needs a deadline, cancellation, bounded concurrency, an error contract, and an explicit retry decision. Adding retries at multiple layers multiplies traffic during the exact failure period when capacity is scarce.
 
-Cross-service workflows cannot rely on one database transaction. Model durable intermediate states and convergence. Use outbox/inbox patterns to bridge local commits and messages, and sagas when a business workflow requires multiple local transactions and compensations. Design for duplicates, delay, reordering, replay, and manual repair.
+Cross-service workflows cannot rely on one database transaction. Store intermediate
+states durably and define how the system eventually reaches a valid final state. An
+outbox records messages beside a local change; an inbox records which messages a
+consumer has already applied. Use a saga (a durable sequence of local steps) when a
+workflow spans services, and define the business actions that undo earlier effects
+if a later step fails. Design for duplicates, delay, reordering, replay, and manual
+repair.
 
 Prefer asynchronous communication when the caller does not require an immediate result and temporary decoupling is valuable. Prefer synchronous communication when the caller needs a current answer. Neither style is inherently more scalable or correct; both require contracts, limits, observability, and ownership.
 

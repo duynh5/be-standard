@@ -181,12 +181,14 @@ For JSON responses, set `Content-Type: application/json` before calling
 `WriteHeader`. Headers written afterward may be ignored because the status and
 headers have already been sent.
 
-For a created product, return a representation and its URI:
+For a created product, return its URI and a representation:
 
 ```text
 HTTP/1.1 201 Created
 Content-Type: application/json
 Location: /v1/products/product-123
+
+{"id":"product-123","sku":"TEA-001","name":"Green tea"}
 ```
 
 Never return Go error text, stack traces, SQL, filesystem paths, or secrets in a
@@ -572,25 +574,25 @@ log lines when individual structured fields are the contract.
 An offset says how many rows to skip and becomes slow or unstable when data changes.
 A cursor identifies the last position in a deterministic order.
 
-For in-memory products ordered by `(sku, id)`, encode the last pair as an opaque,
-URL-safe value. On the next request, return records strictly after that pair. Validate
-decoded cursor shape and enforce a maximum page size. Do not expose a database
-offset disguised as base64.
+For in-memory products ordered by `(created_at, id)`, encode the last pair as an
+opaque, URL-safe value. On the next request, return records strictly after that pair.
+Validate decoded cursor shape and enforce a maximum page size. Do not expose a
+database offset disguised as base64.
 
 For example, with page size two:
 
 ```text
-ordered products: (COF-001, p2), (TEA-001, p1), (TEA-001, p9), (WAT-001, p4)
+ordered products: (10:00:00, p2), (10:05:00, p1), (10:05:00, p9), (10:07:00, p4)
 
-page 1: (COF-001, p2), (TEA-001, p1)
-cursor: opaque encoding of (TEA-001, p1)
-page 2: values strictly greater than (TEA-001, p1)
-        -> (TEA-001, p9), (WAT-001, p4)
+page 1: (10:00:00, p2), (10:05:00, p1)
+cursor: opaque encoding of (10:05:00, p1)
+page 2: values strictly greater than (10:05:00, p1)
+        -> (10:05:00, p9), (10:07:00, p4)
 ```
 
-Including `id` resolves the tie between the two `TEA-001` positions. If the cursor
-contained only the SKU, the server could not say whether `p9` belongs before or
-after the page boundary.
+Including `id` resolves the tie between the two products created at `10:05:00`. If
+the cursor contained only the timestamp, the server could not say whether `p9`
+belongs before or after the page boundary.
 
 ## 13. Knowledge check
 

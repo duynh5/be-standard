@@ -12,10 +12,12 @@ By the end of this lesson, you should be able to:
 - separate authentication from authorization;
 - identify the OAuth 2.0 and OpenID Connect participants relevant to an API;
 - validate an access token's signature and security claims;
-- handle JWKS caching and key rotation without disabling verification;
+- handle caching and rotation of the identity provider's JSON Web Key Set (JWKS)
+  without disabling verification;
 - introduce a trusted principal into request context;
 - enforce role and object-level authorization;
-- explain JWT, opaque-token, CORS, CSRF, and browser-session tradeoffs;
+- explain JSON Web Token (JWT), opaque-token, cross-origin resource sharing (CORS),
+  cross-site request forgery (CSRF), and browser-session tradeoffs;
 - prevent over-posting and sensitive-data leakage;
 - test missing, invalid, expired, wrong-role, and wrong-owner access;
 - write a compact threat model.

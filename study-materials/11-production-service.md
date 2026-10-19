@@ -66,7 +66,8 @@ two identical attempts arrive before either completes.
 
 1. Require one bounded `Idempotency-Key` on order creation.
 2. Define key syntax, scope, retention, and response-replay contract in OpenAPI.
-3. Canonicalize the validated order command and hash it.
+3. Convert the validated order command to one standard byte representation
+   (canonicalize it), then hash it.
 4. Add a table keyed by customer and key with fingerprint, state, outcome, and expiry.
 5. Acquire or inspect the record inside the placement transaction.
 6. Reject mismatched fingerprints with a stable conflict.
@@ -125,8 +126,9 @@ Traces connect HTTP, use case, and PostgreSQL operations. Name spans by stable
 operation, propagate context, record result category, and omit parameters or
 sensitive payload. Sampling must retain enough errors and slow traces for diagnosis.
 
-Dashboards follow user symptoms toward resources: request SLI, endpoint breakdown,
-dependency latency/errors, pool saturation, process resources, and deployments.
+Dashboards follow user symptoms toward resources: the measured reliability signal
+(service-level indicator, or SLI), endpoint breakdown, dependency latency/errors,
+pool saturation, process resources, and deployments.
 Alerts page only on actionable sustained impact or imminent exhaustion.
 
 ### Start with a concrete situation
@@ -158,7 +160,8 @@ metric without adding temporary debug output.
 5. Trace handler and database boundaries with redacted attributes.
 6. Add audit events for admin product changes and sensitive operator actions.
 7. Build a user-first dashboard for order placement and retrieval.
-8. Define an SLI and SLO, then error-rate, latency, and saturation alerts.
+8. Define a service-level indicator (SLI) to measure and a service-level objective
+   (SLO) as its target, then add error-rate, latency, and saturation alerts.
 9. Write a runbook from symptom to queries, mitigation, rollback, and escalation.
 10. Capture one successful and one failed request across all telemetry types.
 
@@ -291,8 +294,10 @@ Overload controls include bounded concurrency, queues, rate limits, deadlines, a
 load shedding. Recovery after pressure is as important as peak throughput.
 
 Caching is justified only when repeated reads create measured latency/load and the
-team can define source of truth, key, TTL, invalidation, stampede prevention,
-failure behavior, and observability.
+team can define the source of truth, cache key, lifetime (time to live, or TTL), and
+rule for removing stale entries. It must also prevent a cache stampede, where many
+requests miss at once and overload the database, and define failure and monitoring
+behavior.
 
 ### Start with a concrete situation
 
@@ -356,14 +361,16 @@ consistency and removal behavior.
 ### Goal and mental model
 
 Understand PostgreSQL as a concurrent, maintained, recoverable system rather than a
-query endpoint. MVCC gives transactions snapshots; isolation controls anomalies but
-can add blocking or aborts. Locks, maintenance, WAL, backups, and replication all
-affect service behavior.
+query endpoint. PostgreSQL keeps multiple row versions so transactions can read a
+consistent snapshot while writes occur. This behavior is called multi-version
+concurrency control (MVCC). Isolation rules control which changes a transaction may
+observe, but stronger rules can add waiting or aborted work. Locks, maintenance,
+the write-ahead log (WAL), backups, and replicas all affect service behavior.
 
-At read committed, separate statements may observe different committed data. Repeatable
-read preserves a snapshot but can still reject conflicting writes. Serializable aims
-to reproduce serial outcomes by aborting some transactions; callers must retry the
-entire safe operation, never only the last statement.
+At `READ COMMITTED`, separate statements may observe different committed data.
+`REPEATABLE READ` preserves a snapshot but can still reject conflicting writes.
+`SERIALIZABLE` aims to reproduce serial outcomes by aborting some transactions;
+callers must retry the entire safe operation, never only the last statement.
 
 Deadlocks are cycles of lock waiting. PostgreSQL aborts one participant. Consistent
 lock order reduces risk, while short transactions and bounded statement/lock
@@ -377,9 +384,12 @@ Online backfills must be restartable: select a bounded key range, update idempot
 record progress, commit, throttle, observe locks/lag, and verify. Schema constraints
 can be added in validation stages when supported to limit blocking.
 
-Base backup plus continuous WAL archiving enables point-in-time recovery. Streaming
-replication supports standby availability but does not replace backups: deletion or
-corruption can replicate. RPO and RTO are measured by restore and promotion drills.
+A base backup plus continuous WAL archiving enables point-in-time recovery (PITR):
+restoring the database close to a chosen time. Streaming replication keeps a standby
+copy available but does not replace backups because deletion or corruption can also
+be copied. Measure maximum acceptable data loss (recovery point objective, or RPO)
+and maximum acceptable restoration time (recovery time objective, or RTO) with
+restore and promotion drills.
 
 ### Start with a concrete situation
 
@@ -399,12 +409,9 @@ become a cycle, and PostgreSQL aborts one transaction as a deadlock victim. Repe
 with the same sorted lock order and observe why the cycle no longer forms for that
 path.
 
-Multi-version concurrency control (MVCC) is PostgreSQL's way of letting transactions
-read consistent row versions while writes occur. Write-ahead logging (WAL) records
-changes needed for crash recovery and replication. Point-in-time recovery (PITR)
-combines a base backup with later WAL records to restore near a chosen time. These
-terms become useful only after you connect them to an observable transaction or
-recovery experiment.
+The WAL records changes needed for crash recovery and replication. PITR combines a
+base backup with later WAL records. These terms become useful only after you connect
+them to an observable transaction or recovery experiment.
 
 ### Guided work
 
